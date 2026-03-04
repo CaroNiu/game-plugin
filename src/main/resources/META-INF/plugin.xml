@@ -1,0 +1,29 @@
+<idea-plugin>
+    <id>com.caro.nbascore</id>
+    <name>NBA Live Score</name>
+    <vendor>Caro</vendor>
+    <description><![CDATA[
+        <p>NBA 实时比分插件 - 在 IDEA 中查看 NBA 比赛实时比分</p>
+        <ul>
+            <li>实时显示当天 NBA 比赛比分</li>
+            <li>支持自动刷新</li>
+            <li>点击查看详细比赛数据</li>
+            <li>工具栏快捷访问</li>
+        </ul>
+    ]]></description>
+    <depends>com.intellij.modules.platform</depends>
+    
+    <actions>
+        <group id="NBA.Score.Toolbar" text="NBA Score" description="NBA Live Score">
+            <add-to-group group-id="MainToolBar" anchor="last"/>
+            <action id="NBA.Refresh" class="com.caro.nba.RefreshAction" text="刷新比分" icon="/icons/nba.svg"/>
+        </group>
+    </actions>
+    
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="NBA Score" 
+                    factoryClass="com.caro.nba.NBAScoreToolWindowFactory"
+                    anchor="right" 
+                    icon="/icons/nba.svg"/>
+    </extensions>
+</idea-plugin>
