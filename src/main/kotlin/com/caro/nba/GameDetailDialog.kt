@@ -2,13 +2,11 @@ package com.caro.nba
 
 import com.caro.nba.model.GameDetail
 import com.caro.nba.service.GameDetailService
-import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
-import kotlinx.coroutines.*
 import java.awt.*
 import javax.swing.*
 import javax.swing.border.EmptyBorder
@@ -24,7 +22,6 @@ class GameDetailDialog(
 ) : DialogWrapper(project) {
     
     private val service = GameDetailService()
-    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     
     private var mainPanel: JPanel? = null
     private var contentPanel: JPanel? = null
@@ -33,8 +30,8 @@ class GameDetailDialog(
     init {
         title = "$awayTeamName vs $homeTeamName"
         setOKButtonText("关闭")
+        setCancelButtonText(null)
         init()
-        loadGameDetail()
     }
     
     override fun createCenterPanel(): JComponent? {
@@ -48,25 +45,29 @@ class GameDetailDialog(
         }
         mainPanel?.add(loadingLabel, BorderLayout.CENTER)
         
+        // 后台线程加载数据
+        Thread {
+            try {
+                val result = service.getGameDetail(gameId)
+                result.fold(
+                    onSuccess = { detail ->
+                        SwingUtilities.invokeLater { showGameDetail(detail) }
+                    },
+                    onFailure = { error ->
+                        SwingUtilities.invokeLater { showError(error.message ?: "加载失败") }
+                    }
+                )
+            } catch (e: Exception) {
+                SwingUtilities.invokeLater { showError(e.message ?: "未知错误") }
+            }
+        }.start()
+        
         return mainPanel
     }
     
     // 隐藏 Cancel 按钮
     override fun createActions(): Array<Action> {
         return arrayOf(okAction)
-    }
-    
-    private fun loadGameDetail() {
-        scope.launch {
-            val result = service.getGameDetail(gameId)
-            
-            ApplicationManager.getApplication().invokeLater {
-                result.fold(
-                    onSuccess = { detail -> showGameDetail(detail) },
-                    onFailure = { error -> showError(error.message ?: "加载失败") }
-                )
-            }
-        }
     }
     
     private fun showGameDetail(detail: GameDetail) {
@@ -300,10 +301,5 @@ class GameDetailDialog(
         mainPanel?.add(errorLabel, BorderLayout.CENTER)
         mainPanel?.revalidate()
         mainPanel?.repaint()
-    }
-    
-    override fun dispose() {
-        scope.cancel()
-        super.dispose()
     }
 }
