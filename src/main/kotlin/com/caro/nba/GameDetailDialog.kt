@@ -256,7 +256,7 @@ class GameDetailDialog(
                             try {
                                 Desktop.getDesktop().browse(java.net.URI(highlight.videoUrl))
                             } catch (ex: Exception) {
-                                JOptionPane.showMessageDialog(this@GameDetailDialog, "无法打开链接: ${ex.message}")
+                                JOptionPane.showMessageDialog(mainPanel, "无法打开链接: ${ex.message}")
                             }
                         }
                     }
