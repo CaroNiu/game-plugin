@@ -1,0 +1,48 @@
+name: Build and Publish Plugin
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v3
+    
+    - name: Build Plugin
+      run: ./gradlew buildPlugin
+    
+    - name: Upload Plugin Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: nba-score-plugin
+        path: build/distributions/*.zip
+    
+    - name: Publish Plugin to Marketplace
+      if: github.event_name == 'push'
+      env:
+        PUBLISH_TOKEN: ${{ secrets.JETBRAINS_TOKEN }}
+      run: |
+        ./gradlew publishPlugin -PintellijPlatform.publishing.token=$PUBLISH_TOKEN
+    
+    - name: Create Release
+      if: github.event_name == 'push'
+      uses: softprops/action-gh-release@v1
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: NBA Live Score v1.0.${{ github.run_number }}
+        files: build/distributions/*.zip
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
