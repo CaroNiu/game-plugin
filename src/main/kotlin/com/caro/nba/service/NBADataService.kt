@@ -24,6 +24,18 @@ class NBADataService {
     
     private val espnUrl = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     
+    // 英文队名到中文映射
+    private val teamNameMap = mapOf(
+        "Hawks" to "老鹰", "Celtics" to "凯尔特人", "Nets" to "篮网", "Hornets" to "黄蜂",
+        "Bulls" to "公牛", "Cavaliers" to "骑士", "Mavericks" to "独行侠", "Nuggets" to "掘金",
+        "Pistons" to "活塞", "Warriors" to "勇士", "Rockets" to "火箭", "Pacers" to "步行者",
+        "Clippers" to "快船", "Lakers" to "湖人", "Grizzlies" to "灰熊", "Heat" to "热火",
+        "Bucks" to "雄鹿", "Timberwolves" to "森林狼", "Pelicans" to "鹈鹕", "Knicks" to "尼克斯",
+        "Thunder" to "雷霆", "Magic" to "魔术", "76ers" to "76人", "Suns" to "太阳",
+        "Trail Blazers" to "开拓者", "Kings" to "国王", "Spurs" to "马刺", "Raptors" to "猛龙",
+        "Jazz" to "爵士", "Wizards" to "奇才"
+    )
+    
     /**
      * 获取指定日期的比赛数据
      */
@@ -40,10 +52,10 @@ class NBADataService {
             val response = client.newCall(request).execute()
             
             if (!response.isSuccessful) {
-                return Result.failure(Exception("API request failed: ${response.code}"))
+                return Result.failure(Exception("API请求失败: ${response.code}"))
             }
             
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+            val body = response.body?.string() ?: return Result.failure(Exception("响应为空"))
             val scoreboard = parseESPNResponse(body, date)
             Result.success(scoreboard)
         } catch (e: Exception) {
@@ -64,9 +76,11 @@ class NBADataService {
             // 获取比赛状态
             val status = eventObj.getAsJsonObject("status")
             val type = status?.getAsJsonObject("type")
-            val state = type?.get("state")?.asString ?: "scheduled"
+            val state = type?.get("state")?.asString ?: "pre"
             val period = type?.get("period")?.asInt ?: 0
-            val clock = type?.get("shortDetail")?.asString ?: ""
+            val displayClock = status?.get("displayClock")?.asString ?: ""
+            val shortDetail = type?.get("shortDetail")?.asString ?: ""
+            val detail = type?.get("detail")?.asString ?: ""
             
             // 获取比赛竞争信息
             val competitions = eventObj.getAsJsonArray("competitions")
@@ -74,23 +88,29 @@ class NBADataService {
             val competitors = competition?.getAsJsonArray("competitors") ?: return@map null
             
             // 找到主队和客队 - homeAway 字段是 "home" 或 "away"
-            val home = competitors.find { 
+            val homeCompetitor = competitors.find { 
                 it.asJsonObject.get("homeAway")?.asString == "home" 
             }?.asJsonObject
-            val away = competitors.find { 
+            val awayCompetitor = competitors.find { 
                 it.asJsonObject.get("homeAway")?.asString == "away" 
             }?.asJsonObject
             
-            val homeTeam = home?.getAsJsonObject("team")
-            val awayTeam = away?.getAsJsonObject("team")
+            val homeTeam = homeCompetitor?.getAsJsonObject("team")
+            val awayTeam = awayCompetitor?.getAsJsonObject("team")
             
             // score 是字符串，需要转换
-            val homeScore = home?.get("score")?.asString?.toIntOrNull() ?: 0
-            val awayScore = away?.get("score")?.asString?.toIntOrNull() ?: 0
+            val homeScore = homeCompetitor?.get("score")?.asString?.toIntOrNull() ?: 0
+            val awayScore = awayCompetitor?.get("score")?.asString?.toIntOrNull() ?: 0
             
             // logo 直接在 team 对象中
             val homeLogo = homeTeam?.get("logo")?.asString ?: ""
             val awayLogo = awayTeam?.get("logo")?.asString ?: ""
+            
+            // 获取队名信息
+            val homeShortName = homeTeam?.get("shortDisplayName")?.asString ?: ""
+            val awayShortName = awayTeam?.get("shortDisplayName")?.asString ?: ""
+            val homeAbbr = homeTeam?.get("abbreviation")?.asString ?: ""
+            val awayAbbr = awayTeam?.get("abbreviation")?.asString ?: ""
             
             NBAGame(
                 gameId = eventObj.get("id")?.asString ?: "",
@@ -101,19 +121,22 @@ class NBADataService {
                     else -> state
                 },
                 period = period,
-                clock = clock,
+                clock = displayClock,
                 startTime = eventObj.get("date")?.asString ?: "",
+                detail = detail,
                 homeTeam = NBAGame.Team(
                     id = homeTeam?.get("id")?.asString ?: "",
-                    name = homeTeam?.get("displayName")?.asString ?: "",
-                    abbreviation = homeTeam?.get("abbreviation")?.asString ?: "",
+                    name = teamNameMap[homeShortName] ?: homeShortName,
+                    abbreviation = homeAbbr,
+                    shortName = homeShortName,
                     logo = homeLogo
                 ),
                 homeScore = homeScore,
                 awayTeam = NBAGame.Team(
                     id = awayTeam?.get("id")?.asString ?: "",
-                    name = awayTeam?.get("displayName")?.asString ?: "",
-                    abbreviation = awayTeam?.get("abbreviation")?.asString ?: "",
+                    name = teamNameMap[awayShortName] ?: awayShortName,
+                    abbreviation = awayAbbr,
+                    shortName = awayShortName,
                     logo = awayLogo
                 ),
                 awayScore = awayScore
