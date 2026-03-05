@@ -2,7 +2,9 @@
     <id>com.caro.nbascore</id>
     <name>NBA Live Score</name>
     <vendor email="creaternuri@gmail.com">Caro</vendor>
-    <description><![CDATA[
+    <description>
+        Live Score Plugin - View NBA game live scores in IDEA
+        <![CDATA[
         <p>NBA 实时比分插件 - 在 IDEA 中查看 NBA 比赛实时比分</p>
         <ul>
             <li>实时显示当天 NBA 比赛比分</li>
@@ -10,7 +12,8 @@
             <li>点击查看详细比赛数据</li>
             <li>工具栏快捷访问</li>
         </ul>
-    ]]></description>
+        ]]>
+    </description>
     <depends>com.intellij.modules.platform</depends>
     
     <actions>
