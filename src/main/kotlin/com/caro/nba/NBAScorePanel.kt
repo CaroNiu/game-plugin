@@ -221,6 +221,14 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         )
         card.background = JBColor.PanelBackground
         card.maximumSize = Dimension(Int.MAX_VALUE, 100)
+        card.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
+        
+        // 点击打开详情页面
+        card.addMouseListener(object : java.awt.event.MouseAdapter() {
+            override fun mouseClicked(e: java.awt.event.MouseEvent?) {
+                showGameDetail(game)
+            }
+        })
         
         // 左侧：比赛状态
         val statusPanel = JPanel()
@@ -306,10 +314,31 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         }
         scorePanel.add(homeScoreLabel, gbc)
         
+        // 详情提示
+        val detailHint = JLabel("点击查看详情 ›").apply {
+            font = font.deriveFont(10f)
+            foreground = JBColor.GRAY
+            horizontalAlignment = SwingConstants.RIGHT
+        }
+        
         card.add(statusPanel, BorderLayout.WEST)
         card.add(scorePanel, BorderLayout.CENTER)
+        card.add(detailHint, BorderLayout.SOUTH)
         
         return card
+    }
+    
+    /**
+     * 显示比赛详情
+     */
+    private fun showGameDetail(game: NBAGame) {
+        val dialog = GameDetailDialog(
+            project,
+            game.gameId,
+            game.homeTeam.name,
+            game.awayTeam.name
+        )
+        dialog.show()
     }
     
     /**
