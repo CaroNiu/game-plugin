@@ -65,7 +65,7 @@ cd game-plugin
 - IntelliJ IDEA 2023.3+
 - JDK 17
 - Kotlin 1.9.22
-- Gradle 8.x
+- Gradle 8.5.x
 
 ## 项目结构
 
