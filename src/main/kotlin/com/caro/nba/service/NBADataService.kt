@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
 
 /**
  * NBA 数据服务 - 获取实时比分
- * 使用免费的 balldontlie API 或 ESPN API
+ * 使用 ESPN API
  */
 class NBADataService {
     private val client = OkHttpClient.Builder()
@@ -22,10 +22,6 @@ class NBADataService {
     
     private val gson = Gson()
     
-    // 使用 balldontlie API (免费)
-    private val baseUrl = "https://www.balldontlie.io/api/v1"
-    
-    // 或者使用 ESPN API
     private val espnUrl = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
     
     /**
@@ -64,39 +60,63 @@ class NBADataService {
         
         val games = events.map { event ->
             val eventObj = event.asJsonObject
-            val competitions = eventObj.getAsJsonArray("competitions")?.get(0)?.asJsonObject
             
-            val competitors = competitions?.getAsJsonArray("competitors") ?: return@map null
+            // 获取比赛状态
+            val status = eventObj.getAsJsonObject("status")
+            val type = status?.getAsJsonObject("type")
+            val state = type?.get("state")?.asString ?: "scheduled"
+            val period = type?.get("period")?.asInt ?: 0
+            val clock = type?.get("shortDetail")?.asString ?: ""
             
-            val home = competitors.find { it.asJsonObject.get("homeAway")?.asString == "true" }?.asJsonObject
-            val away = competitors.find { it.asJsonObject.get("homeAway")?.asString == "false" }?.asJsonObject
+            // 获取比赛竞争信息
+            val competitions = eventObj.getAsJsonArray("competitions")
+            val competition = competitions?.get(0)?.asJsonObject
+            val competitors = competition?.getAsJsonArray("competitors") ?: return@map null
+            
+            // 找到主队和客队 - homeAway 字段是 "home" 或 "away"
+            val home = competitors.find { 
+                it.asJsonObject.get("homeAway")?.asString == "home" 
+            }?.asJsonObject
+            val away = competitors.find { 
+                it.asJsonObject.get("homeAway")?.asString == "away" 
+            }?.asJsonObject
             
             val homeTeam = home?.getAsJsonObject("team")
             val awayTeam = away?.getAsJsonObject("team")
             
-            val status = eventObj.getAsJsonObject("status")
-            val type = status?.getAsJsonObject("type")
+            // score 是字符串，需要转换
+            val homeScore = home?.get("score")?.asString?.toIntOrNull() ?: 0
+            val awayScore = away?.get("score")?.asString?.toIntOrNull() ?: 0
+            
+            // logo 直接在 team 对象中
+            val homeLogo = homeTeam?.get("logo")?.asString ?: ""
+            val awayLogo = awayTeam?.get("logo")?.asString ?: ""
             
             NBAGame(
                 gameId = eventObj.get("id")?.asString ?: "",
-                status = type?.get("state")?.asString ?: "scheduled",
-                period = type?.get("period")?.asInt ?: 0,
-                clock = type?.get("shortDetail")?.asString ?: "",
+                status = when (state) {
+                    "pre" -> "scheduled"
+                    "in" -> "in_progress"
+                    "post" -> "finished"
+                    else -> state
+                },
+                period = period,
+                clock = clock,
                 startTime = eventObj.get("date")?.asString ?: "",
                 homeTeam = NBAGame.Team(
                     id = homeTeam?.get("id")?.asString ?: "",
                     name = homeTeam?.get("displayName")?.asString ?: "",
                     abbreviation = homeTeam?.get("abbreviation")?.asString ?: "",
-                    logo = homeTeam?.getAsJsonObject("logos")?.get(0)?.asJsonObject?.get("href")?.asString ?: ""
+                    logo = homeLogo
                 ),
-                homeScore = home?.getAsJsonObject("score")?.get("value")?.asInt ?: 0,
+                homeScore = homeScore,
                 awayTeam = NBAGame.Team(
                     id = awayTeam?.get("id")?.asString ?: "",
                     name = awayTeam?.get("displayName")?.asString ?: "",
                     abbreviation = awayTeam?.get("abbreviation")?.asString ?: "",
-                    logo = awayTeam?.getAsJsonObject("logos")?.get(0)?.asJsonObject?.get("href")?.asString ?: ""
+                    logo = awayLogo
                 ),
-                awayScore = away?.getAsJsonObject("score")?.get("value")?.asInt ?: 0
+                awayScore = awayScore
             )
         }.filterNotNull()
         
