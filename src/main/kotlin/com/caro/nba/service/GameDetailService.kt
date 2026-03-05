@@ -71,41 +71,54 @@ class GameDetailService {
             )
         }
         
-        // 解析球队统计和比分
-        val boxscore = root.getAsJsonObject("boxscore")
-        val teamsArray = boxscore?.getAsJsonArray("teams")
+        // 从 header.competitions[0].competitors 获取比分（这是正确的数据源）
+        val header = root.getAsJsonObject("header")
+        val competitions = header?.getAsJsonArray("competitions")
+        val competition = competitions?.get(0)?.asJsonObject
+        val competitors = competition?.getAsJsonArray("competitors")
         
         var homeTeam: GameDetail.TeamDetail? = null
         var awayTeam: GameDetail.TeamDetail? = null
+        var status = "scheduled"
+        var period = 0
+        var statusDetail = ""
         
-        teamsArray?.forEach { teamElement ->
-            val teamObj = teamElement.asJsonObject
-            val isHome = teamObj.get("homeAway")?.asString == "home"
-            val team = teamObj.getAsJsonObject("team")
-            
-            val stats = mutableMapOf<String, String>()
-            teamObj.getAsJsonArray("statistics")?.forEach { stat ->
-                val statObj = stat.asJsonObject
-                val name = statObj.get("abbreviation")?.asString ?: ""
-                val value = statObj.get("displayValue")?.asString ?: ""
-                stats[name] = value
-            }
-            
+        // 解析状态
+        val statusObj = competition?.getAsJsonObject("status")
+        val type = statusObj?.getAsJsonObject("type")
+        val state = type?.get("state")?.asString ?: "pre"
+        statusDetail = type?.get("detail")?.asString ?: ""
+        period = type?.get("period")?.asInt ?: 0
+        
+        status = when (state) {
+            "pre" -> "scheduled"
+            "in" -> "in_progress"
+            "post" -> "finished"
+            else -> state
+        }
+        
+        // 解析球队和比分
+        competitors?.forEach { compElement ->
+            val compObj = compElement.asJsonObject
+            val isHome = compObj.get("homeAway")?.asString == "home"
+            val team = compObj.getAsJsonObject("team")
             val shortDisplayName = team.get("shortDisplayName")?.asString ?: ""
+            val score = compObj.get("score")?.asString?.toIntOrNull() ?: 0
+            
             val teamDetail = GameDetail.TeamDetail(
                 id = team.get("id")?.asString ?: "",
                 name = teamNameMap[shortDisplayName] ?: shortDisplayName,
                 abbreviation = team.get("abbreviation")?.asString ?: "",
-                logo = team.get("logo")?.asString ?: "",
-                score = teamObj.get("score")?.asString?.toIntOrNull() ?: 0,
-                statistics = stats,
+                logo = team.getAsJsonArray("logos")?.get(0)?.asJsonObject?.get("href")?.asString ?: "",
+                score = score,
+                statistics = emptyMap(),
                 leaders = emptyList()
             )
             
             if (isHome) homeTeam = teamDetail else awayTeam = teamDetail
         }
         
-        // 解析球员领袖 - 结构: leaders[].leaders[].leaders[]
+        // 解析球员领袖
         val leadersArray = root.getAsJsonArray("leaders") ?: emptyList()
         val homeLeaders = mutableListOf<GameDetail.TeamLeader>()
         val awayLeaders = mutableListOf<GameDetail.TeamLeader>()
@@ -115,12 +128,10 @@ class GameDetailService {
             val teamId = teamLeadersObj.getAsJsonObject("team")?.get("id")?.asString
             val isHomeTeam = teamId == homeTeam?.id
             
-            // 获取该球队的各类别领袖
             teamLeadersObj.getAsJsonArray("leaders")?.forEach { categoryElement ->
                 val categoryObj = categoryElement.asJsonObject
                 val categoryName = categoryObj.get("displayName")?.asString ?: ""
                 
-                // 获取该类别的领袖球员
                 categoryObj.getAsJsonArray("leaders")?.firstOrNull()?.let { playerElement ->
                     val playerObj = playerElement.asJsonObject
                     val athlete = playerObj.getAsJsonObject("athlete")
@@ -138,19 +149,8 @@ class GameDetailService {
             }
         }
         
-        // 更新队伍的leaders
         homeTeam = homeTeam?.copy(leaders = homeLeaders)
         awayTeam = awayTeam?.copy(leaders = awayLeaders)
-        
-        // 解析比赛状态
-        val header = root.getAsJsonObject("header")
-        val competitions = header?.getAsJsonArray("competitions")
-        val competition = competitions?.get(0)?.asJsonObject
-        val status = competition?.getAsJsonObject("status")
-        val type = status?.getAsJsonObject("type")
-        val state = type?.get("state")?.asString ?: "pre"
-        val detail = type?.get("detail")?.asString ?: ""
-        val period = type?.get("period")?.asInt ?: 0
         
         // 解析高光视频/新闻
         val highlights = mutableListOf<GameDetail.Highlight>()
@@ -173,12 +173,7 @@ class GameDetailService {
         
         return GameDetail(
             gameId = gameId,
-            status = when (state) {
-                "pre" -> "scheduled"
-                "in" -> "in_progress"
-                "post" -> "finished"
-                else -> state
-            },
+            status = status,
             clock = "",
             period = period,
             venue = venue,
