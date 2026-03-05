@@ -62,7 +62,7 @@ cd game-plugin
 
 ## 开发环境
 
-- IntelliJ IDEA 2023.3+
+- IntelliJ IDEA 2023.2+
 - JDK 17
 - Kotlin 1.9.22
 - Gradle 8.5.x

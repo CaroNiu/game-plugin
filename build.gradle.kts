@@ -1,4 +1,3 @@
-import org.jetbrains.intellij.platform.gradle.IntelliJPlatformType
 import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
 
 plugins {
@@ -12,6 +11,9 @@ version = "1.0.0"
 
 repositories {
     mavenCentral()
+    // 显式添加 JetBrains 仓库
+    maven("https://www.jetbrains.com/intellij-repository/releases")
+    maven("https://www.jetbrains.com/intellij-repository/snapshots")
     intellijPlatform {
         defaultRepositories()
     }
@@ -19,9 +21,10 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        intellijIdeaCommunity("2023.3")
+        // 同步降低 IDEA 版本到 2023.2
+        intellijIdeaCommunity("2023.2")
         pluginVerifier()
-        instrumentation()
+        instrumentationTools()
     }
     
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
@@ -35,7 +38,7 @@ intellijPlatform {
         version = "1.0.0"
         
         ideaVersion {
-            sinceBuild = "233"
+            sinceBuild = "232"
             untilBuild = "241.*"
         }
     }
