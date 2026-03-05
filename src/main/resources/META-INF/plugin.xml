@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>com.caro.nbascore</id>
     <name>NBA Live Score</name>
-    <vendor>Caro</vendor>
+    <vendor email="creaternuri@gmail.com">Caro</vendor>
     <description><![CDATA[
         <p>NBA 实时比分插件 - 在 IDEA 中查看 NBA 比赛实时比分</p>
         <ul>

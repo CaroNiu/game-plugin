@@ -30,7 +30,6 @@ class GameDetailDialog(
     init {
         title = "$awayTeamName vs $homeTeamName"
         setOKButtonText("关闭")
-        setCancelButtonText(null)
         init()
     }
     
