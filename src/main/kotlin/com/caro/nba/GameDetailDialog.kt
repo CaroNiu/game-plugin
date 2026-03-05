@@ -10,7 +10,6 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import java.awt.*
-import java.net.URL
 import javax.swing.*
 import javax.swing.border.EmptyBorder
 
@@ -32,15 +31,17 @@ class GameDetailDialog(
     private var loadingLabel: JLabel? = null
     
     init {
-        title = "$awayTeamName vs $homeTeamName - 比赛详情"
+        title = "$awayTeamName vs $homeTeamName"
         setOKButtonText("关闭")
+        // 移除 Cancel 按钮
+        setCancelButtonText(null)
         init()
         loadGameDetail()
     }
     
     override fun createCenterPanel(): JComponent? {
         mainPanel = JPanel(BorderLayout())
-        mainPanel?.preferredSize = Dimension(700, 600)
+        mainPanel?.preferredSize = Dimension(650, 550)
         
         // 加载中提示
         loadingLabel = JLabel("正在加载比赛详情...", SwingConstants.CENTER).apply {
@@ -52,18 +53,19 @@ class GameDetailDialog(
         return mainPanel
     }
     
+    // 隐藏 Cancel 按钮
+    override fun createActions(): Array<Action> {
+        return arrayOf(okAction)
+    }
+    
     private fun loadGameDetail() {
         scope.launch {
             val result = service.getGameDetail(gameId)
             
             ApplicationManager.getApplication().invokeLater {
                 result.fold(
-                    onSuccess = { detail ->
-                        showGameDetail(detail)
-                    },
-                    onFailure = { error ->
-                        showError(error.message ?: "加载失败")
-                    }
+                    onSuccess = { detail -> showGameDetail(detail) },
+                    onFailure = { error -> showError(error.message ?: "加载失败") }
                 )
             }
         }
@@ -149,7 +151,7 @@ class GameDetailDialog(
         // 状态
         val statusText = when (detail.status) {
             "scheduled" -> "未开始"
-            "in_progress" -> "进行中 ${if (detail.period > 4) "OT${detail.period - 4}" else "第${detail.period}节"} ${detail.clock}"
+            "in_progress" -> "进行中 ${if (detail.period > 4) "OT${detail.period - 4}" else "第${detail.period}节"}"
             "finished" -> "已结束"
             else -> detail.status
         }
@@ -273,7 +275,7 @@ class GameDetailDialog(
                 font = font.deriveFont(Font.BOLD, 13f)
                 foreground = JBColor(0x0066CC, 0x4A9EFF)
             })
-            textPanel.add(JLabel(highlight.description.take(100) + if (highlight.description.length > 100) "..." else "").apply {
+            textPanel.add(JLabel(highlight.description.take(80) + if (highlight.description.length > 80) "..." else "").apply {
                 font = font.deriveFont(11f)
                 foreground = JBColor.GRAY
             })

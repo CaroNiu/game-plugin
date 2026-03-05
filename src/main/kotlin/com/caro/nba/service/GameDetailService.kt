@@ -71,7 +71,7 @@ class GameDetailService {
             )
         }
         
-        // 解析球队统计
+        // 解析球队统计和比分
         val boxscore = root.getAsJsonObject("boxscore")
         val teamsArray = boxscore?.getAsJsonArray("teams")
         
@@ -91,34 +91,36 @@ class GameDetailService {
                 stats[name] = value
             }
             
+            val shortDisplayName = team.get("shortDisplayName")?.asString ?: ""
             val teamDetail = GameDetail.TeamDetail(
                 id = team.get("id")?.asString ?: "",
-                name = teamNameMap[team.get("shortDisplayName")?.asString] ?: team.get("shortDisplayName")?.asString ?: "",
+                name = teamNameMap[shortDisplayName] ?: shortDisplayName,
                 abbreviation = team.get("abbreviation")?.asString ?: "",
                 logo = team.get("logo")?.asString ?: "",
                 score = teamObj.get("score")?.asString?.toIntOrNull() ?: 0,
                 statistics = stats,
-                leaders = emptyList(),
-                record = ""
+                leaders = emptyList()
             )
             
             if (isHome) homeTeam = teamDetail else awayTeam = teamDetail
         }
         
-        // 解析球员领袖
+        // 解析球员领袖 - 结构: leaders[].leaders[].leaders[]
         val leadersArray = root.getAsJsonArray("leaders") ?: emptyList()
         val homeLeaders = mutableListOf<GameDetail.TeamLeader>()
         val awayLeaders = mutableListOf<GameDetail.TeamLeader>()
         
-        leadersArray.forEach { leaderElement ->
-            val leaderObj = leaderElement.asJsonObject
-            val teamId = leaderObj.getAsJsonObject("team")?.get("id")?.asString
+        leadersArray.forEach { teamLeadersElement ->
+            val teamLeadersObj = teamLeadersElement.asJsonObject
+            val teamId = teamLeadersObj.getAsJsonObject("team")?.get("id")?.asString
             val isHomeTeam = teamId == homeTeam?.id
             
-            leaderObj.getAsJsonArray("leaders")?.forEach { categoryElement ->
+            // 获取该球队的各类别领袖
+            teamLeadersObj.getAsJsonArray("leaders")?.forEach { categoryElement ->
                 val categoryObj = categoryElement.asJsonObject
                 val categoryName = categoryObj.get("displayName")?.asString ?: ""
                 
+                // 获取该类别的领袖球员
                 categoryObj.getAsJsonArray("leaders")?.firstOrNull()?.let { playerElement ->
                     val playerObj = playerElement.asJsonObject
                     val athlete = playerObj.getAsJsonObject("athlete")
@@ -147,22 +149,25 @@ class GameDetailService {
         val status = competition?.getAsJsonObject("status")
         val type = status?.getAsJsonObject("type")
         val state = type?.get("state")?.asString ?: "pre"
-        val displayClock = status?.get("displayClock")?.asString ?: ""
+        val detail = type?.get("detail")?.asString ?: ""
         val period = type?.get("period")?.asInt ?: 0
         
-        // 解析高光视频
+        // 解析高光视频/新闻
         val highlights = mutableListOf<GameDetail.Highlight>()
         root.getAsJsonObject("news")?.getAsJsonArray("articles")?.take(5)?.forEach { article ->
             val articleObj = article.asJsonObject
             val images = articleObj.getAsJsonArray("images")
-            val thumbnail = images?.firstOrNull()?.asJsonObject?.get("url")?.asString ?: ""
+            val thumbnail = images?.filterIsInstance<JsonObject>()?.firstOrNull()?.get("url")?.asString ?: ""
+            
+            val videoUrl = articleObj.getAsJsonObject("links")
+                ?.getAsJsonObject("web")?.get("href")?.asString ?: ""
             
             highlights.add(GameDetail.Highlight(
                 id = articleObj.get("id")?.asString ?: "",
                 title = articleObj.get("headline")?.asString ?: "",
                 description = articleObj.get("description")?.asString ?: "",
                 thumbnailUrl = thumbnail,
-                videoUrl = articleObj.getAsJsonObject("links")?.getAsJsonObject("web")?.get("href")?.asString ?: ""
+                videoUrl = videoUrl
             ))
         }
         
@@ -174,7 +179,7 @@ class GameDetailService {
                 "post" -> "finished"
                 else -> state
             },
-            clock = displayClock,
+            clock = "",
             period = period,
             venue = venue,
             homeTeam = homeTeam ?: GameDetail.TeamDetail("", "", "", ""),
