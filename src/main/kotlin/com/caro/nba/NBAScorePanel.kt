@@ -10,15 +10,13 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import java.awt.*
-import java.awt.event.ActionEvent
-import java.awt.event.ActionListener
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.util.*
 import javax.swing.*
 
 /**
- * NBA 比分面板 - 主 UI
+ * NBA 比分面板 - 主 UI（包含比分和排名Tab）
  */
 class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     
@@ -29,6 +27,10 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     // 当前选择的日期
     private var selectedDate = LocalDate.now()
     
+    // 子面板
+    private val gamesPanel = JPanel()
+    private var standingsPanel: StandingsPanel? = null
+    
     // UI 组件
     private val dateLabel = JLabel()
     private val prevDayButton = JButton("◀")
@@ -37,8 +39,10 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     private val datePickerButton = JButton("📅")
     private val refreshButton = JButton("刷新")
     private val autoRefreshCheckBox = JCheckBox("自动刷新", false)
-    private val gamesPanel = JPanel()
     private val statusLabel = JLabel("加载中...")
+    
+    // Tab 容器
+    private val tabbedPane = JTabbedPane()
     
     init {
         setupUI()
@@ -47,6 +51,9 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     
     private fun setupUI() {
+        // ===================== Tab 1: 比分 =====================
+        val scorePanel = JPanel(BorderLayout())
+        
         // 顶部工具栏 - 日期选择
         val datePanel = JPanel(FlowLayout(FlowLayout.CENTER, 5, 2))
         prevDayButton.preferredSize = Dimension(40, 25)
@@ -94,9 +101,20 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         val scrollPane = JBScrollPane(gamesPanel)
         scrollPane.preferredSize = Dimension(350, 400)
         
-        add(topPanel, BorderLayout.NORTH)
-        add(scrollPane, BorderLayout.CENTER)
+        scorePanel.add(topPanel, BorderLayout.NORTH)
+        scorePanel.add(scrollPane, BorderLayout.CENTER)
         
+        // ===================== Tab 2: 排名 =====================
+        standingsPanel = StandingsPanel(project)
+        
+        // 添加到 Tab 容器
+        tabbedPane.addTab("比分", scorePanel)
+        tabbedPane.addTab("排名", standingsPanel)
+        
+        // 设置 Tab 图标样式
+        tabbedPane.font = tabbedPane.font.deriveFont(Font.BOLD, 12f)
+        
+        add(tabbedPane, BorderLayout.CENTER)
         preferredSize = Dimension(370, 480)
     }
     
@@ -132,9 +150,6 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
      * 显示日期选择器
      */
     private fun showDatePicker() {
-        val calendar = Calendar.getInstance()
-        calendar.set(selectedDate.year, selectedDate.monthValue - 1, selectedDate.dayOfMonth)
-        
         // 使用简单的输入对话框
         val input = JOptionPane.showInputDialog(
             this,
@@ -373,5 +388,6 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     fun dispose() {
         refreshJob?.cancel()
         scope.cancel()
+        standingsPanel?.dispose()
     }
 }
