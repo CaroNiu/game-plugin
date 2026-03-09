@@ -21,7 +21,7 @@
 
 ### 方式一：从文件安装
 
-1. 下载最新的插件包 `nba-score-plugin-1.0.0.zip`
+1. 下载最新的插件包 `nba-score-plugin-lastest.zip`
 2. 打开 IDEA → Settings → Plugins → ⚙️ → Install Plugin from Disk
 3. 选择下载的 zip 文件
 4. 重启 IDEA
