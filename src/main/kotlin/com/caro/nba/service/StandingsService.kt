@@ -1,9 +1,6 @@
 package com.caro.nba.service
 
 import com.caro.nba.model.*
-import com.google.gson.Gson
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.time.LocalDateTime
@@ -20,8 +17,6 @@ class StandingsService {
         .readTimeout(15, TimeUnit.SECONDS)
         .build()
     
-    private val gson = Gson()
-    
     // ESPN 排名页面URL
     private val standingsUrl = "https://www.espn.com/nba/standings"
     
@@ -36,9 +31,6 @@ class StandingsService {
         "Clippers" to "快船", "Trail Blazers" to "开拓者", "Grizzlies" to "灰熊",
         "Mavericks" to "独行侠", "Pelicans" to "鹈鹕", "Jazz" to "爵士", "Kings" to "国王"
     )
-    
-    // 东部球队缩写
-    private val easternAbbrs = setOf("DET", "BOS", "NY", "CLE", "TOR", "ORL", "MIA", "PHI", "ATL", "CHA", "MIL", "CHI", "BKN", "WSH", "IND")
     
     /**
      * 获取排名数据
@@ -70,77 +62,36 @@ class StandingsService {
     
     /**
      * 从HTML中解析排名数据
+     * ESPN数据结构包含两个groups: Eastern Conference 和 Western Conference
      */
     private fun parseStandingsFromHtml(html: String): NBAStandings {
-        // 查找 __NEXT_DATA__ 或 window['__INITIAL_STATE__'] 中的数据
-        // ESPN使用 Next.js，数据在 <script id="__NEXT_DATA__"> 中
-        
         val easternTeams = mutableListOf<TeamStanding>()
         val westernTeams = mutableListOf<TeamStanding>()
         
-        // 提取standings数组
-        val standingsPattern = """"standings":\[(.*?)\],"notes"""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val match = standingsPattern.find(html)
+        // 查找所有groups数组中的standings数据
+        // 格式: "groups":[{"name":"Eastern Conference","standings":[...]},{"name":"Western Conference","standings":[...]}]
+        val groupsPattern = """"groups":\[(.*?)\]\}""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val groupsMatch = groupsPattern.find(html)
         
-        if (match != null) {
-            val standingsJson = match.groupValues[1]
+        if (groupsMatch != null) {
+            val groupsJson = groupsMatch.groupValues[1]
             
-            // 解析每个球队
-            val teamPattern = """"team":\{(.*?)"links":"(.*?)"\},"stats":\[(.*?)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
-            teamPattern.findAll(standingsJson).forEach { teamMatch ->
-                val teamInfo = teamMatch.groupValues[1]
-                val statsStr = teamMatch.groupValues[3]
-                
-                // 提取球队信息
-                val idPattern = """"id":"(\d+)"""".toRegex()
-                val abbrPattern = """"abbrev":"([A-Z]+)"""".toRegex()
-                val namePattern = """"displayName":"([^"]+)"""".toRegex()
-                val shortNamePattern = """"shortDisplayName":"([^"]+)"""".toRegex()
-                val logoPattern = """"logo":"([^"]+)"""".toRegex()
-                
-                val teamId = idPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val abbr = abbrPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val displayName = namePattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val shortName = shortNamePattern.find(teamInfo)?.groupValues?.get(1) ?: displayName
-                val logo = logoPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                
-                // 解析stats数组
-                val stats = statsStr.split(",").map { it.trim().replace("\"", "") }
-                
-                if (stats.size >= 22) {
-                    // stats索引：6=负场，7=排名，12=连胜，14=胜场
-                    val wins = stats[14].toIntOrNull() ?: 0
-                    val losses = stats[6].toIntOrNull() ?: 0
-                    val winPercent = if (wins + losses > 0) wins.toDouble() / (wins + losses) else 0.0
-                    val gamesBehind = stats[4].ifEmpty { "-" }
-                    val homeRecord = stats[17].ifEmpty { "0-0" }
-                    val awayRecord = stats[18].ifEmpty { "0-0" }
-                    val last10 = stats[21].ifEmpty { "0-0" }
-                    val streak = stats[12].ifEmpty { "" }
-                    val conferenceRank = stats[7].toIntOrNull() ?: 0
-                    
-                    val teamStanding = TeamStanding(
-                        teamId = teamId,
-                        teamName = teamNameMap[shortName] ?: shortName,
-                        abbreviation = abbr,
-                        logo = logo,
-                        wins = wins,
-                        losses = losses,
-                        winPercent = winPercent,
-                        gamesBehind = gamesBehind,
-                        homeRecord = homeRecord,
-                        awayRecord = awayRecord,
-                        last10 = last10,
-                        streak = streak,
-                        conferenceRank = conferenceRank
-                    )
-                    
-                    if (abbr in easternAbbrs) {
-                        easternTeams.add(teamStanding)
-                    } else {
-                        westernTeams.add(teamStanding)
-                    }
-                }
+            // 分别提取东部和西部
+            val easternPattern = """"name":"Eastern Conference","abbreviation":"East","standings":(\[(.*?)\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            val westernPattern = """"name":"Western Conference","abbreviation":"West","standings":(\[(.*?)\])""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            
+            // 解析东部
+            easternPattern.findAll(groupsJson).forEach { match ->
+                val standingsJson = match.groupValues[1]
+                val teams = parseTeamsFromStandings(standingsJson, "East")
+                easternTeams.addAll(teams)
+            }
+            
+            // 解析西部
+            westernPattern.findAll(groupsJson).forEach { match ->
+                val standingsJson = match.groupValues[1]
+                val teams = parseTeamsFromStandings(standingsJson, "West")
+                westernTeams.addAll(teams)
             }
         }
         
@@ -153,5 +104,101 @@ class StandingsService {
             western = ConferenceStandings("West", westernTeams),
             lastUpdated = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         )
+    }
+    
+    /**
+     * 解析standings数组中的球队数据
+     */
+    private fun parseTeamsFromStandings(standingsJson: String, conference: String): List<TeamStanding> {
+        val teams = mutableListOf<TeamStanding>()
+        
+        // 匹配每个球队的数据块
+        val teamPattern = """"team":\{(.*?)\},"stats":\[(.*?)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        
+        teamPattern.findAll(standingsJson).forEach { match ->
+            val teamInfo = match.groupValues[1]
+            val statsStr = match.groupValues[2]
+            
+            // 提取球队基本信息
+            val idPattern = """"id":"(\d+)"""".toRegex()
+            val abbrPattern = """"abbrev":"([A-Z]+)"""".toRegex()
+            val shortNamePattern = """"shortDisplayName":"([^"]+)"""".toRegex()
+            val logoPattern = """"logo":"([^"]+)"""".toRegex()
+            
+            val teamId = idPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+            val abbr = abbrPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+            val shortName = shortNamePattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+            val logo = logoPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+            
+            // 解析stats数组 - ESPN stats顺序: 0=oppPoints,1=points,2=diff,3=divWinPct,4=gb,5=confWinPct,6=L,7=rank,8=pointDiff,9=pointsDiff,10=ptsAgainst,11=ptsFor,12=streak,13=pct,14=W,15=home/away区分等
+            // 解析stats - 去掉首尾的方括号
+            val statsContent = statsStr.trim().removeSurrounding("[", "]")
+            val stats = statsContent.split(",").map { it.trim().replace("\"", "") }
+            
+            if (stats.size >= 15) {
+                val wins = stats[14].toIntOrNull() ?: 0  // 第14位是胜场
+                val losses = stats[6].toIntOrNull() ?: 0   // 第6位是负场
+                val winPercent = stats[13].replace(".", "").toDoubleOrNull()?.div(1000) ?: 
+                                (if (wins + losses > 0) wins.toDouble() / (wins + losses) else 0.0)
+                val gamesBehind = stats[4].ifEmpty { "-" }
+                val streak = stats[12].ifEmpty { "" }
+                val conferenceRank = stats[7].toIntOrNull() ?: 0
+                
+                // 主客场战绩在后面
+                val homeAway = stats.drop(15).joinToString(",")
+                val homeRecord = if (homeAway.contains(",")) {
+                    val parts = homeAway.split(",")
+                    parts.getOrNull(0)?.replace("\"", "")?.ifEmpty { "0-0" } ?: "0-0"
+                } else "0-0"
+                val awayRecord = if (homeAway.contains(",")) {
+                    val parts = homeAway.split(",")
+                    parts.getOrNull(1)?.replace("\"", "")?.ifEmpty { "0-0" } ?: "0-0"
+                } else "0-0"
+                
+                // 最后10场需要从另一个位置获取
+                val last10 = extractLast10(stats)
+                
+                val teamStanding = TeamStanding(
+                    teamId = teamId,
+                    teamName = teamNameMap[shortName] ?: shortName,
+                    abbreviation = abbr,
+                    logo = logo,
+                    wins = wins,
+                    losses = losses,
+                    winPercent = winPercent,
+                    gamesBehind = gamesBehind,
+                    homeRecord = homeRecord,
+                    awayRecord = awayRecord,
+                    last10 = last10,
+                    streak = streak,
+                    conferenceRank = conferenceRank
+                )
+                
+                teams.add(teamStanding)
+            }
+        }
+        
+        return teams
+    }
+    
+    /**
+     * 从stats中提取最近10场战绩
+     */
+    private fun extractLast10(stats: List<String>): String {
+        // stats中包含last10数据，通常在后面几个位置
+        // 格式可能是 "L10" 或者类似格式
+        for (stat in stats) {
+            if (stat.contains("-") && stat.length <= 5 && stat.matches(Regex(".*\\d+-\\d+.*"))) {
+                val parts = stat.split("-")
+                if (parts.size == 2) {
+                    val first = parts[0].replace(Regex("[^0-9]"), "")
+                    val second = parts[1].replace(Regex("[^0-9]"), "")
+                    if (first.toIntOrNull() != null && second.toIntOrNull() != null) {
+                        return stat.replace("\"", "")
+                    }
+                }
+            }
+        }
+        return "0-0"
     }
 }
