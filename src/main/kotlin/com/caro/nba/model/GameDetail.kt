@@ -19,7 +19,7 @@ data class GameDetail(
         val name: String,
         val city: String
     )
-    
+
     data class TeamDetail(
         val id: String,
         val name: String,
@@ -30,7 +30,7 @@ data class GameDetail(
         val leaders: List<TeamLeader> = emptyList(),
         val record: String = ""
     )
-    
+
     data class TeamLeader(
         val category: String,  // points, assists, rebounds
         val playerName: String,
@@ -38,12 +38,12 @@ data class GameDetail(
         val playerHeadshot: String,
         val value: String
     )
-    
+
     data class PlayerStats(
         val homePlayers: List<Player>,
         val awayPlayers: List<Player>
     )
-    
+
     data class Player(
         val id: String,
         val name: String,
@@ -61,9 +61,12 @@ data class GameDetail(
         val threeMade: String = "0",
         val threeAttempts: String = "0",
         val ftMade: String = "0",
-        val ftAttempts: String = "0"
+        val ftAttempts: String = "0",
+        val plusMinus: String = "0",
+        val headshot: String = "",
+        val playerUrl: String = ""
     )
-    
+
     data class Highlight(
         val id: String,
         val title: String,
@@ -71,7 +74,7 @@ data class GameDetail(
         val thumbnailUrl: String,
         val videoUrl: String
     )
-    
+
     data class GameNews(
         val id: String,
         val title: String,
