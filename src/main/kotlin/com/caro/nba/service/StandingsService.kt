@@ -3,6 +3,7 @@ package com.caro.nba.service
 import com.caro.nba.model.*
 import com.google.gson.Gson
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.time.LocalDateTime
@@ -10,36 +11,57 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
- * NBA 排名数据服务 - 修复版
- * 由于 ESPN standings API 不可用，使用模拟数据
+ * NBA 排名数据服务 - 真实数据版本
+ * 通过抓取 ESPN 网页获取实时排名数据
  */
 class StandingsService {
     private val client = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(15, TimeUnit.SECONDS)
+        .readTimeout(15, TimeUnit.SECONDS)
         .build()
     
     private val gson = Gson()
     
+    // ESPN 排名页面URL
+    private val standingsUrl = "https://www.espn.com/nba/standings"
+    
     // 英文队名到中文映射
     private val teamNameMap = mapOf(
-        "Hawks" to "老鹰", "Celtics" to "凯尔特人", "Nets" to "篮网", "Hornets" to "黄蜂",
-        "Bulls" to "公牛", "Cavaliers" to "骑士", "Mavericks" to "独行侠", "Nuggets" to "掘金",
-        "Pistons" to "活塞", "Warriors" to "勇士", "Rockets" to "火箭", "Pacers" to "步行者",
-        "Clippers" to "快船", "Lakers" to "湖人", "Grizzlies" to "灰熊", "Heat" to "热火",
-        "Bucks" to "雄鹿", "Timberwolves" to "森林狼", "Pelicans" to "鹈鹕", "Knicks" to "尼克斯",
-        "Thunder" to "雷霆", "Magic" to "魔术", "76ers" to "76人", "Suns" to "太阳",
-        "Trail Blazers" to "开拓者", "Blazers" to "开拓者", "Kings" to "国王", "Spurs" to "马刺", "Raptors" to "猛龙",
-        "Jazz" to "爵士", "Wizards" to "奇才"
+        "Pistons" to "活塞", "Celtics" to "凯尔特人", "Knicks" to "尼克斯", "Cavaliers" to "骑士",
+        "Raptors" to "猛龙", "Magic" to "魔术", "Heat" to "热火", "76ers" to "76人",
+        "Hawks" to "老鹰", "Hornets" to "黄蜂", "Bucks" to "雄鹿", "Bulls" to "公牛",
+        "Nets" to "篮网", "Wizards" to "奇才", "Pacers" to "步行者",
+        "Thunder" to "雷霆", "Spurs" to "马刺", "Timberwolves" to "森林狼", "Rockets" to "火箭",
+        "Lakers" to "湖人", "Nuggets" to "掘金", "Suns" to "太阳", "Warriors" to "勇士",
+        "Clippers" to "快船", "Trail Blazers" to "开拓者", "Grizzlies" to "灰熊",
+        "Mavericks" to "独行侠", "Pelicans" to "鹈鹕", "Jazz" to "爵士", "Kings" to "国王"
     )
     
+    // 东部球队缩写
+    private val easternAbbrs = setOf("DET", "BOS", "NY", "CLE", "TOR", "ORL", "MIA", "PHI", "ATL", "CHA", "MIL", "CHI", "BKN", "WSH", "IND")
+    
     /**
-     * 获取排名数据 - 使用模拟数据
+     * 获取排名数据
      */
     fun getStandings(): Result<NBAStandings> {
         return try {
-            // 由于 ESPN API 不可用，返回模拟数据
-            val standings = createMockStandings()
+            val request = Request.Builder()
+                .url(standingsUrl)
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
+                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
+                .header("Accept-Language", "en-US,en;q=0.5")
+                .build()
+            
+            val response = client.newCall(request).execute()
+            
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("HTTP ${response.code}"))
+            }
+            
+            val html = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+            
+            // 从HTML中提取standings JSON数据
+            val standings = parseStandingsFromHtml(html)
             Result.success(standings)
         } catch (e: Exception) {
             Result.failure(e)
@@ -47,94 +69,84 @@ class StandingsService {
     }
     
     /**
-     * 创建模拟排名数据
+     * 从HTML中解析排名数据
      */
-    private fun createMockStandings(): NBAStandings {
-        val easternTeams = listOf(
-            TeamStanding(
-                teamId = "1", teamName = "凯尔特人", abbreviation = "BOS", logo = "https://a.espncdn.com/i/teamlogos/nba/500/bos.png",
-                wins = 52, losses = 12, winPercent = 0.813, gamesBehind = "-", homeRecord = "28-4", awayRecord = "24-8",
-                last10 = "8-2", streak = "W3", conferenceRank = 1, playoffSeed = 1, clincher = "x"
-            ),
-            TeamStanding(
-                teamId = "2", teamName = "骑士", abbreviation = "CLE", logo = "https://a.espncdn.com/i/teamlogos/nba/500/cle.png",
-                wins = 45, losses = 19, winPercent = 0.703, gamesBehind = "7.0", homeRecord = "25-7", awayRecord = "20-12",
-                last10 = "7-3", streak = "W1", conferenceRank = 2, playoffSeed = 2, clincher = "x"
-            ),
-            TeamStanding(
-                teamId = "3", teamName = "雄鹿", abbreviation = "MIL", logo = "https://a.espncdn.com/i/teamlogos/nba/500/mil.png",
-                wins = 42, losses = 22, winPercent = 0.656, gamesBehind = "10.0", homeRecord = "24-8", awayRecord = "18-14",
-                last10 = "6-4", streak = "L1", conferenceRank = 3, playoffSeed = 3, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "4", teamName = "尼克斯", abbreviation = "NYK", logo = "https://a.espncdn.com/i/teamlogos/nba/500/nyk.png",
-                wins = 40, losses = 24, winPercent = 0.625, gamesBehind = "12.0", homeRecord = "22-10", awayRecord = "18-14",
-                last10 = "7-3", streak = "W2", conferenceRank = 4, playoffSeed = 4, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "5", teamName = "热火", abbreviation = "MIA", logo = "https://a.espncdn.com/i/teamlogos/nba/500/mia.png",
-                wins = 38, losses = 26, winPercent = 0.594, gamesBehind = "14.0", homeRecord = "21-11", awayRecord = "17-15",
-                last10 = "5-5", streak = "W1", conferenceRank = 5, playoffSeed = 5, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "6", teamName = "步行者", abbreviation = "IND", logo = "https://a.espncdn.com/i/teamlogos/nba/500/ind.png",
-                wins = 36, losses = 28, winPercent = 0.563, gamesBehind = "16.0", homeRecord = "20-12", awayRecord = "16-16",
-                last10 = "6-4", streak = "L2", conferenceRank = 6, playoffSeed = 6, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "7", teamName = "76人", abbreviation = "PHI", logo = "https://a.espncdn.com/i/teamlogos/nba/500/phi.png",
-                wins = 34, losses = 30, winPercent = 0.531, gamesBehind = "18.0", homeRecord = "19-13", awayRecord = "15-17",
-                last10 = "4-6", streak = "W1", conferenceRank = 7, playoffSeed = 7, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "8", teamName = "魔术", abbreviation = "ORL", logo = "https://a.espncdn.com/i/teamlogos/nba/500/orl.png",
-                wins = 32, losses = 32, winPercent = 0.500, gamesBehind = "20.0", homeRecord = "18-14", awayRecord = "14-18",
-                last10 = "5-5", streak = "L1", conferenceRank = 8, playoffSeed = 8, clincher = ""
-            )
-        )
+    private fun parseStandingsFromHtml(html: String): NBAStandings {
+        // 查找 __NEXT_DATA__ 或 window['__INITIAL_STATE__'] 中的数据
+        // ESPN使用 Next.js，数据在 <script id="__NEXT_DATA__"> 中
         
-        val westernTeams = listOf(
-            TeamStanding(
-                teamId = "9", teamName = "雷霆", abbreviation = "OKC", logo = "https://a.espncdn.com/i/teamlogos/nba/500/okc.png",
-                wins = 48, losses = 16, winPercent = 0.750, gamesBehind = "-", homeRecord = "26-6", awayRecord = "22-10",
-                last10 = "9-1", streak = "W5", conferenceRank = 1, playoffSeed = 1, clincher = "x"
-            ),
-            TeamStanding(
-                teamId = "10", teamName = "掘金", abbreviation = "DEN", logo = "https://a.espncdn.com/i/teamlogos/nba/500/den.png",
-                wins = 43, losses = 21, winPercent = 0.672, gamesBehind = "5.0", homeRecord = "25-7", awayRecord = "18-14",
-                last10 = "7-3", streak = "W2", conferenceRank = 2, playoffSeed = 2, clincher = "x"
-            ),
-            TeamStanding(
-                teamId = "11", teamName = "森林狼", abbreviation = "MIN", logo = "https://a.espncdn.com/i/teamlogos/nba/500/min.png",
-                wins = 41, losses = 23, winPercent = 0.641, gamesBehind = "7.0", homeRecord = "24-8", awayRecord = "17-15",
-                last10 = "6-4", streak = "L1", conferenceRank = 3, playoffSeed = 3, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "12", teamName = "快船", abbreviation = "LAC", logo = "https://a.espncdn.com/i/teamlogos/nba/500/lac.png",
-                wins = 39, losses = 25, winPercent = 0.609, gamesBehind = "9.0", homeRecord = "22-10", awayRecord = "17-15",
-                last10 = "5-5", streak = "W1", conferenceRank = 4, playoffSeed = 4, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "13", teamName = "独行侠", abbreviation = "DAL", logo = "https://a.espncdn.com/i/teamlogos/nba/500/dal.png",
-                wins = 37, losses = 27, winPercent = 0.578, gamesBehind = "11.0", homeRecord = "21-11", awayRecord = "16-16",
-                last10 = "6-4", streak = "W2", conferenceRank = 5, playoffSeed = 5, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "14", teamName = "太阳", abbreviation = "PHX", logo = "https://a.espncdn.com/i/teamlogos/nba/500/phx.png",
-                wins = 35, losses = 29, winPercent = 0.547, gamesBehind = "13.0", homeRecord = "20-12", awayRecord = "15-17",
-                last10 = "4-6", streak = "L2", conferenceRank = 6, playoffSeed = 6, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "15", teamName = "湖人", abbreviation = "LAL", logo = "https://a.espncdn.com/i/teamlogos/nba/500/lal.png",
-                wins = 33, losses = 31, winPercent = 0.516, gamesBehind = "15.0", homeRecord = "19-13", awayRecord = "14-18",
-                last10 = "7-3", streak = "W3", conferenceRank = 7, playoffSeed = 7, clincher = ""
-            ),
-            TeamStanding(
-                teamId = "16", teamName = "勇士", abbreviation = "GSW", logo = "https://a.espncdn.com/i/teamlogos/nba/500/gsw.png",
-                wins = 31, losses = 33, winPercent = 0.484, gamesBehind = "17.0", homeRecord = "18-14", awayRecord = "13-19",
-                last10 = "3-7", streak = "L1", conferenceRank = 8, playoffSeed = 8, clincher = ""
-            )
-        )
+        val easternTeams = mutableListOf<TeamStanding>()
+        val westernTeams = mutableListOf<TeamStanding>()
+        
+        // 提取standings数组
+        val standingsPattern = """"standings":\[(.*?)\],"notes"""".toRegex(RegexOption.DOT_MATCHES_ALL)
+        val match = standingsPattern.find(html)
+        
+        if (match != null) {
+            val standingsJson = match.groupValues[1]
+            
+            // 解析每个球队
+            val teamPattern = """"team":\{(.*?)"links":"(.*?)"\},"stats":\[(.*?)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
+            teamPattern.findAll(standingsJson).forEach { teamMatch ->
+                val teamInfo = teamMatch.groupValues[1]
+                val statsStr = teamMatch.groupValues[3]
+                
+                // 提取球队信息
+                val idPattern = """"id":"(\d+)"""".toRegex()
+                val abbrPattern = """"abbrev":"([A-Z]+)"""".toRegex()
+                val namePattern = """"displayName":"([^"]+)"""".toRegex()
+                val shortNamePattern = """"shortDisplayName":"([^"]+)"""".toRegex()
+                val logoPattern = """"logo":"([^"]+)"""".toRegex()
+                
+                val teamId = idPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+                val abbr = abbrPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+                val displayName = namePattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+                val shortName = shortNamePattern.find(teamInfo)?.groupValues?.get(1) ?: displayName
+                val logo = logoPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
+                
+                // 解析stats数组
+                val stats = statsStr.split(",").map { it.trim().replace("\"", "") }
+                
+                if (stats.size >= 22) {
+                    // stats索引：6=负场，7=排名，12=连胜，14=胜场
+                    val wins = stats[14].toIntOrNull() ?: 0
+                    val losses = stats[6].toIntOrNull() ?: 0
+                    val winPercent = if (wins + losses > 0) wins.toDouble() / (wins + losses) else 0.0
+                    val gamesBehind = stats[4].ifEmpty { "-" }
+                    val homeRecord = stats[17].ifEmpty { "0-0" }
+                    val awayRecord = stats[18].ifEmpty { "0-0" }
+                    val last10 = stats[21].ifEmpty { "0-0" }
+                    val streak = stats[12].ifEmpty { "" }
+                    val conferenceRank = stats[7].toIntOrNull() ?: 0
+                    
+                    val teamStanding = TeamStanding(
+                        teamId = teamId,
+                        teamName = teamNameMap[shortName] ?: shortName,
+                        abbreviation = abbr,
+                        logo = logo,
+                        wins = wins,
+                        losses = losses,
+                        winPercent = winPercent,
+                        gamesBehind = gamesBehind,
+                        homeRecord = homeRecord,
+                        awayRecord = awayRecord,
+                        last10 = last10,
+                        streak = streak,
+                        conferenceRank = conferenceRank
+                    )
+                    
+                    if (abbr in easternAbbrs) {
+                        easternTeams.add(teamStanding)
+                    } else {
+                        westernTeams.add(teamStanding)
+                    }
+                }
+            }
+        }
+        
+        // 按排名排序
+        easternTeams.sortBy { it.conferenceRank }
+        westernTeams.sortBy { it.conferenceRank }
         
         return NBAStandings(
             eastern = ConferenceStandings("East", easternTeams),
