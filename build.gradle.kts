@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.caro"
-version = "2.0.0"
+version = "3.0.0"
 
 repositories {
     mavenCentral()
@@ -35,7 +35,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         name = "NBA Live Score"
-        version = "2.0.0"
+        version = "3.0.0"
         
         ideaVersion {
             sinceBuild = "232"

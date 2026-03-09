@@ -29,4 +29,14 @@
                     anchor="right" 
                     icon="/icons/nba.svg"/>
     </extensions>
+
+        <change-notes><![CDATA[
+        <h3>3.0.0</h3>
+        <ul>
+            <li>新增功能：球队排名查看</li>
+            <li>优化比赛详情展示</li>
+            <li>修复已知问题</li>
+        </ul>
+    ]]></change-notes>
+
 </idea-plugin>
