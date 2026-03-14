@@ -4,11 +4,11 @@ import com.caro.nba.model.GameDetail
 import com.caro.nba.service.GameDetailService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
-import com.intellij.openapi.ui.DialogWrapperAction
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import java.awt.*
+import java.awt.event.ActionEvent
 import java.net.URI
 import javax.swing.*
 import javax.swing.border.EmptyBorder
@@ -73,20 +73,19 @@ class GameDetailDialog(
 
     // 添加文字转播按钮
     override fun createActions(): Array<Action> {
-        return arrayOf(okAction)
-    }
-    
-    override fun createLeftSideActions(): Array<Action> {
         val playByPlayAction = object : AbstractAction("📺 文字转播") {
             override fun actionPerformed(e: ActionEvent?) {
+                println("DEBUG: 文字转播按钮被点击！gameId=$gameId, status=$currentStatus")
                 showPlayByPlay()
             }
         }
-        return arrayOf(playByPlayAction)
+        return arrayOf(playByPlayAction, okAction)
     }
 
     private fun showPlayByPlay() {
+        println("DEBUG: showPlayByPlay 开始执行")
         try {
+            println("DEBUG: 创建 PlayByPlayPanel, gameId=$gameId")
             val dialog = PlayByPlayPanel(
                 project,
                 gameId,
@@ -96,8 +95,12 @@ class GameDetailDialog(
                 awayTeamId,
                 currentStatus
             )
+            println("DEBUG: PlayByPlayPanel 创建成功，调用 show()")
             dialog.show()
+            println("DEBUG: show() 调用完成")
         } catch (ex: Exception) {
+            println("DEBUG: 异常 - ${ex.message}")
+            ex.printStackTrace()
             JOptionPane.showMessageDialog(mainPanel, "打开文字转播失败: ${ex.message}", "错误", JOptionPane.ERROR_MESSAGE)
         }
     }
