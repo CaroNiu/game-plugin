@@ -71,8 +71,8 @@ class GameDetailDialog(
 
     // 隐藏 Cancel 按钮，添加文字转播按钮
     override fun createActions(): Array<Action> {
-        val playByPlayAction = object : AbstractAction("📺 文字转播") {
-            override fun actionPerformed(e: java.awt.event.ActionEvent) {
+        val playByPlayAction = object : DialogWrapperAction("📺 文字转播") {
+            override fun doAction(e: ActionEvent?) {
                 showPlayByPlay()
             }
         }
