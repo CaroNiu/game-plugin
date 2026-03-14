@@ -40,10 +40,14 @@ class PlayByPlayPanel(
         init()
     }
 
+    private var mainPanel: JPanel? = null
+    private var scrollPane: JBScrollPane? = null
+
     override fun createCenterPanel(): JComponent {
         val panel = JPanel(BorderLayout(0, 10))
         panel.preferredSize = Dimension(550, 650)
         panel.border = JBUI.Borders.empty(10)
+        mainPanel = panel
 
         // 顶部工具栏
         val toolbar = JPanel(BorderLayout(10, 5))
@@ -82,6 +86,13 @@ class PlayByPlayPanel(
         }
         panel.add(loadingLabel, BorderLayout.CENTER)
 
+        // 创建空的 scrollPane
+        scrollPane = JBScrollPane().apply {
+            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
+            isVisible = false
+        }
+        panel.add(scrollPane, BorderLayout.CENTER)
+
         // 延迟加载数据
         SwingUtilities.invokeLater {
             loadPlayByPlay()
@@ -118,8 +129,6 @@ class PlayByPlayPanel(
     }
 
     private fun showPlayByPlay(pbp: PlayByPlay) {
-        val mainPanel = rootPane.parent as? JComponent ?: return
-        
         loadingLabel?.isVisible = false
         
         // 创建内容面板
@@ -155,14 +164,13 @@ class PlayByPlayPanel(
             }
         }
 
-        val scrollPane = JBScrollPane(content).apply {
-            verticalScrollBarPolicy = JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED
-        }
-
-        mainPanel.removeAll()
-        mainPanel.add(scrollPane, BorderLayout.CENTER)
-        mainPanel.revalidate()
-        mainPanel.repaint()
+        // 更新 scrollPane 内容
+        scrollPane?.viewport?.view = content
+        scrollPane?.isVisible = true
+        loadingLabel?.isVisible = false
+        
+        mainPanel?.revalidate()
+        mainPanel?.repaint()
     }
 
     private fun createPlayPanel(play: PlayByPlay.Play): JPanel {
@@ -220,15 +228,14 @@ class PlayByPlayPanel(
 
     private fun showError(message: String) {
         loadingLabel?.isVisible = false
-        val mainPanel = rootPane.parent as? JComponent ?: return
+        scrollPane?.isVisible = false
         
-        mainPanel.removeAll()
-        mainPanel.add(JLabel("❌ $message").apply {
+        mainPanel?.add(JLabel("❌ $message").apply {
             foreground = JBColor.RED
             font = font.deriveFont(16f)
             horizontalAlignment = SwingConstants.CENTER
         }, BorderLayout.CENTER)
-        mainPanel.revalidate()
-        mainPanel.repaint()
+        mainPanel?.revalidate()
+        mainPanel?.repaint()
     }
 }
