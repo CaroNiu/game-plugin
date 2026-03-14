@@ -20,7 +20,8 @@ class PlayByPlayPanel(
     private val homeTeamName: String,
     private val awayTeamName: String,
     private val homeTeamId: String,
-    private val awayTeamId: String
+    private val awayTeamId: String,
+    private val gameStatus: String = "scheduled"  // 比赛状态
 ) : DialogWrapper(project) {
 
     private val service = GameDetailService()
@@ -31,6 +32,10 @@ class PlayByPlayPanel(
     private var lastUpdateLabel: JLabel? = null
     private var autoRefreshCheck: JCheckBox? = null
     private var autoRefreshTimer: Timer? = null
+    
+    // 根据比赛状态决定是否自动刷新
+    private val isGameFinished: Boolean = gameStatus == "finished"
+    private val isGameScheduled: Boolean = gameStatus == "scheduled"
 
     init {
         title = "文字转播: $awayTeamName vs $homeTeamName"
@@ -77,9 +82,23 @@ class PlayByPlayPanel(
             addActionListener { loadPlayByPlay() }
         }
 
-        // 自动刷新复选框
+        // 状态标签
+        val statusLabel = JLabel(when {
+            isGameFinished -> "📋 已结束"
+            isGameScheduled -> "⏰ 未开始"
+            else -> "🔴 进行中"
+        }).apply {
+            foreground = when {
+                isGameFinished -> JBColor.GRAY
+                isGameScheduled -> JBColor(0xFF9900, 0xFFCC33)
+                else -> JBColor(0x009900, 0x66CC66)
+            }
+        }
+
+        // 自动刷新复选框（已结束的比赛禁用）
         autoRefreshCheck = JCheckBox("自动刷新 (10秒)").apply {
-            isSelected = true
+            isSelected = !isGameFinished && !isGameScheduled  // 只有进行中才默认开启
+            isEnabled = !isGameFinished && !isGameScheduled   // 已结束或未开始时禁用
             addActionListener {
                 if (isSelected) {
                     startAutoRefresh()
@@ -87,12 +106,6 @@ class PlayByPlayPanel(
                     stopAutoRefresh()
                 }
             }
-        }
-
-        val leftPanel = JPanel().apply {
-            add(refreshButton)
-            add(Box.createHorizontalStrut(10))
-            add(autoRefreshCheck)
         }
 
         toolbar.add(leftPanel, BorderLayout.WEST)

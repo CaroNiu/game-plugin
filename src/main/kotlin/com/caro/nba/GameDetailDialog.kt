@@ -32,6 +32,7 @@ class GameDetailDialog(
     private var mainPanel: JPanel? = null
     private var contentPanel: JPanel? = null
     private var loadingLabel: JLabel? = null
+    private var currentStatus: String = "scheduled"  // 存储比赛状态
 
     init {
         title = "$awayTeamName vs $homeTeamName"
@@ -87,12 +88,15 @@ class GameDetailDialog(
             homeTeamName,
             awayTeamName,
             homeTeamId,
-            awayTeamId
+            awayTeamId,
+            currentStatus
         )
         dialog.show()
     }
 
     private fun showGameDetail(detail: GameDetail) {
+        currentStatus = detail.status  // 存储当前比赛状态
+        
         mainPanel?.removeAll()
 
         contentPanel = JPanel().apply {
