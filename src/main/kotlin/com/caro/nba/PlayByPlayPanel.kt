@@ -112,6 +112,14 @@ class PlayByPlayPanel(
             }
         }
 
+        val leftPanel = JPanel().apply {
+            add(refreshButton)
+            add(Box.createHorizontalStrut(10))
+            add(autoRefreshCheck)
+            add(Box.createHorizontalStrut(15))
+            add(statusLabel)
+        }
+
         toolbar.add(leftPanel, BorderLayout.WEST)
         toolbar.add(lastUpdateLabel, BorderLayout.EAST)
 
