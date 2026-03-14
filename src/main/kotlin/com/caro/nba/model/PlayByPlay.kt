@@ -1,0 +1,29 @@
+package com.caro.nba.model
+
+/**
+ * 实时文字转播数据模型
+ */
+data class PlayByPlay(
+    val gameId: String,
+    val plays: List<Play>
+) {
+    data class Play(
+        val id: String,
+        val sequenceNumber: String,
+        val text: String,                    // 事件描述
+        val shortText: String,               // 简短描述
+        val clock: String,                   // 比赛时间 "11:43"
+        val period: Int,                     // 节数 1-4 (OT为5+)
+        val periodDisplay: String,           // "1st Quarter"
+        val teamId: String,                  // 球队ID
+        val teamName: String = "",           // 球队名称（需要映射）
+        val teamLogo: String = "",           // 球队logo
+        val awayScore: Int,                  // 客队比分
+        val homeScore: Int,                  // 主队比分
+        val isScoringPlay: Boolean,          // 是否得分
+        val scoreValue: Int,                 // 得分值
+        val isShootingPlay: Boolean,         // 是否投篮
+        val playType: String,                // 事件类型
+        val participants: List<String> = emptyList()  // 参与球员
+    )
+}

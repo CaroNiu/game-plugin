@@ -21,7 +21,9 @@ class GameDetailDialog(
     private val project: Project,
     private val gameId: String,
     private val homeTeamName: String,
-    private val awayTeamName: String
+    private val awayTeamName: String,
+    private val homeTeamId: String = "",
+    private val awayTeamId: String = ""
 ) : DialogWrapper(project) {
 
     private val service = GameDetailService()
@@ -67,9 +69,26 @@ class GameDetailDialog(
         return mainPanel
     }
 
-    // 隐藏 Cancel 按钮
+    // 隐藏 Cancel 按钮，添加文字转播按钮
     override fun createActions(): Array<Action> {
-        return arrayOf(okAction)
+        val playByPlayAction = object : AbstractAction("📺 文字转播") {
+            override fun actionPerformed(e: java.awt.event.ActionEvent) {
+                showPlayByPlay()
+            }
+        }
+        return arrayOf(okAction, playByPlayAction)
+    }
+
+    private fun showPlayByPlay() {
+        val dialog = PlayByPlayPanel(
+            project,
+            gameId,
+            homeTeamName,
+            awayTeamName,
+            homeTeamId,
+            awayTeamId
+        )
+        dialog.show()
     }
 
     private fun showGameDetail(detail: GameDetail) {

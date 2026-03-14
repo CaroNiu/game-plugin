@@ -351,7 +351,9 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
             project,
             game.gameId,
             game.homeTeam.name,
-            game.awayTeam.name
+            game.awayTeam.name,
+            game.homeTeam.id,
+            game.awayTeam.id
         )
         dialog.show()
     }

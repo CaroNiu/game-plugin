@@ -1,7 +1,9 @@
 package com.caro.nba.service
 
 import com.caro.nba.model.GameDetail
+import com.caro.nba.model.PlayByPlay
 import com.google.gson.Gson
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -220,5 +222,121 @@ class GameDetailService {
             players = GameDetail.PlayerStats(homePlayers, awayPlayers),
             highlights = emptyList()
         )
+    }
+
+    // ESPN 球队 ID 到球队名称和缩写的映射
+    private val teamIdMap = mapOf(
+        "1" to Pair("Warriors", "GSW"),
+        "2" to Pair("Lakers", "LAL"),
+        "3" to Pair("Heat", "MIA"),
+        "4" to Pair("Suns", "PHX"),
+        "5" to Pair("Spurs", "SAS"),
+        "6" to Pair("Bulls", "CHI"),
+        "7" to Pair("Cavaliers", "CLE"),
+        "8" to Pair("Mavericks", "DAL"),
+        "9" to Pair("Nets", "BKN"),
+        "10" to Pair("Knicks", "NYK"),
+        "11" to Pair("Magic", "ORL"),
+        "12" to Pair("76ers", "PHI"),
+        "14" to Pair("Kings", "SAC"),
+        "15" to Pair("Hornets", "CHA"),
+        "16" to Pair("Celtics", "BOS"),
+        "17" to Pair("Clippers", "LAC"),
+        "18" to Pair("Raptors", "TOR"),
+        "19" to Pair("Rockets", "HOU"),
+        "20" to Pair("Nuggets", "DEN"),
+        "21" to Pair("Timberwolves", "MIN"),
+        "22" to Pair("Grizzlies", "MEM"),
+        "23" to Pair("Pelicans", "NOP"),
+        "24" to Pair("Thunder", "OKC"),
+        "25" to Pair("Pacers", "IND"),
+        "27" to Pair("Bucks", "MIL"),
+        "28" to Pair("Hawks", "ATL"),
+        "29" to Pair("Wizards", "WAS"),
+        "30" to Pair("Jazz", "UTA"),
+        "38" to Pair("Trail Blazers", "POR")
+    )
+
+    /**
+     * 获取比赛文字转播数据
+     */
+    fun getPlayByPlay(gameId: String, homeTeamId: String, awayTeamId: String): Result<PlayByPlay> {
+        return try {
+            val url = "$summaryUrl?event=$gameId"
+
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0")
+                .build()
+
+            val response = client.newCall(request).execute()
+
+            if (!response.isSuccessful) {
+                return Result.failure(Exception("API请求失败: ${response.code}"))
+            }
+
+            val body = response.body?.string() ?: return Result.failure(Exception("响应为空"))
+            val plays = parsePlayByPlay(body, gameId, homeTeamId, awayTeamId)
+            Result.success(plays)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    private fun parsePlayByPlay(json: String, gameId: String, homeTeamId: String, awayTeamId: String): PlayByPlay {
+        val root = gson.fromJson(json, JsonObject::class.java)
+        val playsArray = root.getAsJsonArray("plays") ?: JsonArray()
+
+        val plays = playsArray.mapNotNull { playElement ->
+            try {
+                val play = playElement.asJsonObject
+
+                // 获取球队信息
+                val teamObj = play.getAsJsonObject("team")
+                val teamId = teamObj?.get("id")?.asString ?: ""
+                val teamInfo = teamIdMap[teamId] ?: Pair("", "")
+
+                // 获取参与者信息
+                val participantsArray = play.getAsJsonArray("participants")
+                val participantNames = participantsArray?.mapNotNull { p ->
+                    p.asJsonObject.getAsJsonObject("athlete")?.get("displayName")?.asString
+                } ?: emptyList()
+
+                // 判断节数
+                val periodObj = play.getAsJsonObject("period")
+                val periodNumber = periodObj?.get("number")?.asInt ?: 1
+
+                // 获取时间
+                val clockObj = play.getAsJsonObject("clock")
+                val clockDisplay = clockObj?.get("displayValue")?.asString ?: ""
+
+                // 获取事件类型
+                val typeObj = play.getAsJsonObject("type")
+                val playType = typeObj?.get("text")?.asString ?: ""
+
+                PlayByPlay.Play(
+                    id = play.get("id")?.asString ?: "",
+                    sequenceNumber = play.get("sequenceNumber")?.asString ?: "",
+                    text = play.get("text")?.asString ?: "",
+                    shortText = play.get("shortDescription")?.asString ?: "",
+                    clock = clockDisplay,
+                    period = periodNumber,
+                    periodDisplay = periodObj?.get("displayValue")?.asString ?: "",
+                    teamId = teamId,
+                    teamName = teamInfo.first,
+                    awayScore = play.get("awayScore")?.asInt ?: 0,
+                    homeScore = play.get("homeScore")?.asInt ?: 0,
+                    isScoringPlay = play.get("scoringPlay")?.asBoolean ?: false,
+                    scoreValue = play.get("scoreValue")?.asInt ?: 0,
+                    isShootingPlay = play.get("shootingPlay")?.asBoolean ?: false,
+                    playType = playType,
+                    participants = participantNames
+                )
+            } catch (e: Exception) {
+                null
+            }
+        }
+
+        return PlayByPlay(gameId, plays)
     }
 }
