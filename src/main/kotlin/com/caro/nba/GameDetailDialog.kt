@@ -4,6 +4,7 @@ import com.caro.nba.model.GameDetail
 import com.caro.nba.service.GameDetailService
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
+import com.intellij.openapi.ui.DialogWrapperAction
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
