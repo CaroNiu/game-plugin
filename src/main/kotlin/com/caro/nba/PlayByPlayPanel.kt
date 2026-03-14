@@ -45,19 +45,21 @@ class PlayByPlayPanel(
     }
 
     override fun createCenterPanel(): JComponent {
-        mainPanel = JPanel(BorderLayout())
-        mainPanel?.preferredSize = Dimension(550, 650)
+        // 在EDT上初始化UI
+        val panel = JPanel(BorderLayout())
+        panel.preferredSize = Dimension(550, 650)
+        mainPanel = panel
 
         // 顶部工具栏
         val toolbarPanel = createToolbar()
-        mainPanel?.add(toolbarPanel, BorderLayout.NORTH)
+        panel.add(toolbarPanel, BorderLayout.NORTH)
 
         // 加载中提示
         loadingLabel = JLabel("正在加载文字转播...", SwingConstants.CENTER).apply {
             font = font.deriveFont(16f)
             border = EmptyBorder(50, 0, 50, 0)
         }
-        mainPanel?.add(loadingLabel, BorderLayout.CENTER)
+        panel.add(loadingLabel, BorderLayout.CENTER)
 
         // 底部状态栏
         lastUpdateLabel = JLabel("").apply {
@@ -66,10 +68,12 @@ class PlayByPlayPanel(
             horizontalAlignment = SwingConstants.RIGHT
         }
 
-        // 后台线程加载数据
-        loadPlayByPlay()
+        // 延迟加载数据，确保UI完全初始化
+        SwingUtilities.invokeLater {
+            loadPlayByPlay()
+        }
 
-        return mainPanel!!
+        return panel
     }
 
     private fun createToolbar(): JPanel {

@@ -83,25 +83,28 @@ class GameDetailDialog(
     }
 
     private fun showPlayByPlay() {
-        println("DEBUG: showPlayByPlay 开始执行")
-        try {
-            println("DEBUG: 创建 PlayByPlayPanel, gameId=$gameId")
-            val dialog = PlayByPlayPanel(
-                project,
-                gameId,
-                homeTeamName,
-                awayTeamName,
-                homeTeamId,
-                awayTeamId,
-                currentStatus
-            )
-            println("DEBUG: PlayByPlayPanel 创建成功，调用 show()")
-            dialog.show()
-            println("DEBUG: show() 调用完成")
-        } catch (ex: Exception) {
-            println("DEBUG: 异常 - ${ex.message}")
-            ex.printStackTrace()
-            JOptionPane.showMessageDialog(mainPanel, "打开文字转播失败: ${ex.message}", "错误", JOptionPane.ERROR_MESSAGE)
+        // 在EDT上执行对话框显示
+        SwingUtilities.invokeLater {
+            try {
+                val dialog = PlayByPlayPanel(
+                    project,
+                    gameId,
+                    homeTeamName,
+                    awayTeamName,
+                    homeTeamId,
+                    awayTeamId,
+                    currentStatus
+                )
+                dialog.show()
+            } catch (ex: Exception) {
+                ex.printStackTrace()
+                JOptionPane.showMessageDialog(
+                    mainPanel, 
+                    "打开文字转播失败: ${ex.message}", 
+                    "错误", 
+                    JOptionPane.ERROR_MESSAGE
+                )
+            }
         }
     }
 
