@@ -71,27 +71,35 @@ class GameDetailDialog(
         return mainPanel
     }
 
-    // 隐藏 Cancel 按钮，添加文字转播按钮
+    // 添加文字转播按钮
     override fun createActions(): Array<Action> {
-        val playByPlayAction = object : DialogWrapperAction("📺 文字转播") {
-            override fun doAction(e: ActionEvent?) {
+        return arrayOf(okAction)
+    }
+    
+    override fun createLeftSideActions(): Array<Action> {
+        val playByPlayAction = object : AbstractAction("📺 文字转播") {
+            override fun actionPerformed(e: ActionEvent?) {
                 showPlayByPlay()
             }
         }
-        return arrayOf(okAction, playByPlayAction)
+        return arrayOf(playByPlayAction)
     }
 
     private fun showPlayByPlay() {
-        val dialog = PlayByPlayPanel(
-            project,
-            gameId,
-            homeTeamName,
-            awayTeamName,
-            homeTeamId,
-            awayTeamId,
-            currentStatus
-        )
-        dialog.show()
+        try {
+            val dialog = PlayByPlayPanel(
+                project,
+                gameId,
+                homeTeamName,
+                awayTeamName,
+                homeTeamId,
+                awayTeamId,
+                currentStatus
+            )
+            dialog.show()
+        } catch (ex: Exception) {
+            JOptionPane.showMessageDialog(mainPanel, "打开文字转播失败: ${ex.message}", "错误", JOptionPane.ERROR_MESSAGE)
+        }
     }
 
     private fun showGameDetail(detail: GameDetail) {
