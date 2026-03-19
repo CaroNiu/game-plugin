@@ -21,15 +21,15 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // 同步降低 IDEA 版本到 2023.2
-        intellijIdeaCommunity("2023.2")
+        // 升级到 IDEA 2025.3
+        intellijIdeaCommunity("2025.3")
         pluginVerifier()
         instrumentationTools()
     }
     
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
 }
 
 intellijPlatform {
@@ -38,8 +38,8 @@ intellijPlatform {
         version = "3.0.0"
         
         ideaVersion {
-            sinceBuild = "232"
-            untilBuild = "241.*"
+            sinceBuild = "253"
+            untilBuild = "253.*"
         }
     }
 }
