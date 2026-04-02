@@ -234,7 +234,7 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
             BorderFactory.createLineBorder(JBColor.border(), 1),
             JBUI.Borders.empty(8)
         )
-        card.background = JBColor.PanelBackground
+        card.background = UIManager.getColor("Panel.background") ?: JBColor.PanelBackground
         card.maximumSize = Dimension(Int.MAX_VALUE, 100)
         card.cursor = Cursor.getPredefinedCursor(Cursor.HAND_CURSOR)
         
