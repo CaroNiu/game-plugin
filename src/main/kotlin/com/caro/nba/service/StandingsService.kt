@@ -3,7 +3,6 @@ package com.caro.nba.service
 import com.caro.nba.model.*
 import com.google.gson.Gson
 import com.google.gson.JsonObject
-import com.google.gson.JsonParser
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.time.LocalDateTime
@@ -11,8 +10,7 @@ import java.time.format.DateTimeFormatter
 import java.util.concurrent.TimeUnit
 
 /**
- * NBA 排名数据服务 - 真实数据版本
- * 通过抓取 ESPN 网页获取实时排名数据
+ * NBA 排名数据服务 - 使用 ESPN API
  */
 class StandingsService {
     private val client = OkHttpClient.Builder()
@@ -22,8 +20,8 @@ class StandingsService {
     
     private val gson = Gson()
     
-    // ESPN 排名页面URL
-    private val standingsUrl = "https://www.espn.com/nba/standings"
+    // ESPN 排名 API
+    private val standingsUrl = "https://site.api.espn.com/apis/v2/sports/basketball/nba/standings"
     
     // 英文队名到中文映射
     private val teamNameMap = mapOf(
@@ -37,9 +35,6 @@ class StandingsService {
         "Mavericks" to "独行侠", "Pelicans" to "鹈鹕", "Jazz" to "爵士", "Kings" to "国王"
     )
     
-    // 东部球队缩写
-    private val easternAbbrs = setOf("DET", "BOS", "NY", "CLE", "TOR", "ORL", "MIA", "PHI", "ATL", "CHA", "MIL", "CHI", "BKN", "WSH", "IND")
-    
     /**
      * 获取排名数据
      */
@@ -47,9 +42,7 @@ class StandingsService {
         return try {
             val request = Request.Builder()
                 .url(standingsUrl)
-                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8")
-                .header("Accept-Language", "en-US,en;q=0.5")
+                .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
                 .build()
             
             val response = client.newCall(request).execute()
@@ -58,10 +51,8 @@ class StandingsService {
                 return Result.failure(Exception("HTTP ${response.code}"))
             }
             
-            val html = response.body?.string() ?: return Result.failure(Exception("Empty response"))
-            
-            // 从HTML中提取standings JSON数据
-            val standings = parseStandingsFromHtml(html)
+            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+            val standings = parseStandings(body)
             Result.success(standings)
         } catch (e: Exception) {
             Result.failure(e)
@@ -69,88 +60,107 @@ class StandingsService {
     }
     
     /**
-     * 从HTML中解析排名数据
+     * 解析 ESPN API 响应
      */
-    private fun parseStandingsFromHtml(html: String): NBAStandings {
-        // 查找 __NEXT_DATA__ 或 window['__INITIAL_STATE__'] 中的数据
-        // ESPN使用 Next.js，数据在 <script id="__NEXT_DATA__"> 中
+    private fun parseStandings(json: String): NBAStandings {
+        val root = gson.fromJson(json, JsonObject::class.java)
+        val children = root.getAsJsonArray("children") ?: return createEmptyStandings()
         
-        val easternTeams = mutableListOf<TeamStanding>()
-        val westernTeams = mutableListOf<TeamStanding>()
+        var easternTeams = listOf<TeamStanding>()
+        var westernTeams = listOf<TeamStanding>()
         
-        // 提取standings数组
-        val standingsPattern = """"standings":\[(.*?)\],"notes"""".toRegex(RegexOption.DOT_MATCHES_ALL)
-        val match = standingsPattern.find(html)
-        
-        if (match != null) {
-            val standingsJson = match.groupValues[1]
+        children.forEach { child ->
+            val conf = child.asJsonObject
+            val confName = conf.get("name")?.asString ?: ""
+            val entries = conf.getAsJsonObject("standings")?.getAsJsonArray("entries") ?: return@forEach
             
-            // 解析每个球队
-            val teamPattern = """"team":\{(.*?)"links":"(.*?)"\},"stats":\[(.*?)\]""".toRegex(RegexOption.DOT_MATCHES_ALL)
-            teamPattern.findAll(standingsJson).forEach { teamMatch ->
-                val teamInfo = teamMatch.groupValues[1]
-                val statsStr = teamMatch.groupValues[3]
-                
-                // 提取球队信息
-                val idPattern = """"id":"(\d+)"""".toRegex()
-                val abbrPattern = """"abbrev":"([A-Z]+)"""".toRegex()
-                val namePattern = """"displayName":"([^"]+)"""".toRegex()
-                val shortNamePattern = """"shortDisplayName":"([^"]+)"""".toRegex()
-                val logoPattern = """"logo":"([^"]+)"""".toRegex()
-                
-                val teamId = idPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val abbr = abbrPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val displayName = namePattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                val shortName = shortNamePattern.find(teamInfo)?.groupValues?.get(1) ?: displayName
-                val logo = logoPattern.find(teamInfo)?.groupValues?.get(1) ?: ""
-                
-                // 解析stats数组
-                val stats = statsStr.split(",").map { it.trim().replace("\"", "") }
-                
-                if (stats.size >= 22) {
-                    // stats索引：6=负场，7=排名，12=连胜，14=胜场
-                    val wins = stats[14].toIntOrNull() ?: 0
-                    val losses = stats[6].toIntOrNull() ?: 0
-                    val winPercent = if (wins + losses > 0) wins.toDouble() / (wins + losses) else 0.0
-                    val gamesBehind = stats[4].ifEmpty { "-" }
-                    val homeRecord = stats[17].ifEmpty { "0-0" }
-                    val awayRecord = stats[18].ifEmpty { "0-0" }
-                    val last10 = stats[21].ifEmpty { "0-0" }
-                    val streak = stats[12].ifEmpty { "" }
-                    val conferenceRank = stats[7].toIntOrNull() ?: 0
-                    
-                    val teamStanding = TeamStanding(
-                        teamId = teamId,
-                        teamName = teamNameMap[shortName] ?: shortName,
-                        abbreviation = abbr,
-                        logo = logo,
-                        wins = wins,
-                        losses = losses,
-                        winPercent = winPercent,
-                        gamesBehind = gamesBehind,
-                        homeRecord = homeRecord,
-                        awayRecord = awayRecord,
-                        last10 = last10,
-                        streak = streak,
-                        conferenceRank = conferenceRank
-                    )
-                    
-                    if (abbr in easternAbbrs) {
-                        easternTeams.add(teamStanding)
-                    } else {
-                        westernTeams.add(teamStanding)
-                    }
-                }
+            val teams = entries.mapIndexed { index, entry ->
+                parseTeamStanding(entry.asJsonObject, index + 1)  // 强制使用顺序作为排名
+            }.sortedBy { it.conferenceRank }  // 按排名排序
+            
+            when (confName) {
+                "Eastern Conference" -> easternTeams = teams
+                "Western Conference" -> westernTeams = teams
             }
         }
-        
-        // 按排名排序
-        easternTeams.sortBy { it.conferenceRank }
-        westernTeams.sortBy { it.conferenceRank }
         
         return NBAStandings(
             eastern = ConferenceStandings("East", easternTeams),
             western = ConferenceStandings("West", westernTeams),
+            lastUpdated = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        )
+    }
+    
+    /**
+     * 解析单个球队排名数据
+     */
+    private fun parseTeamStanding(entry: JsonObject, defaultRank: Int): TeamStanding {
+        val team = entry.getAsJsonObject("team")
+        val stats = entry.getAsJsonArray("stats")
+        
+        val teamId = team.get("id")?.asString ?: ""
+        val abbreviation = team.get("abbreviation")?.asString ?: ""
+        val shortName = team.get("shortDisplayName")?.asString ?: ""
+        val displayName = team.get("displayName")?.asString ?: ""
+        val logo = team.getAsJsonArray("logos")?.get(0)?.asJsonObject?.get("href")?.asString ?: ""
+        
+        // 解析 stats
+        val statsMap = mutableMapOf<String, String>()
+        stats?.forEach { stat ->
+            val statObj = stat.asJsonObject
+            val name = statObj.get("name")?.asString ?: ""
+            val displayValue = statObj.get("displayValue")?.asString ?: ""
+            statsMap[name] = displayValue
+        }
+        
+        val wins = statsMap["wins"]?.toIntOrNull() ?: 0
+        val losses = statsMap["losses"]?.toIntOrNull() ?: 0
+        val winPercent = statsMap["winPercent"]?.toDoubleOrNull() ?: 0.0
+        val gamesBehind = statsMap["gamesBehind"]?.ifEmpty { "-" } ?: "-"
+        val streak = statsMap["streak"] ?: ""
+        val clincher = statsMap["clincher"] ?: ""
+        val playoffSeed = statsMap["playoffSeed"]?.toIntOrNull() ?: defaultRank
+        
+        // 获取 Overall 记录 (55-21 格式)
+        val overallRecord = stats?.find { 
+            it.asJsonObject.get("name")?.asString == "overall" 
+        }?.asJsonObject?.get("summary")?.asString ?: "$wins-$losses"
+        
+        // 获取主场客场记录
+        val homeRecord = stats?.find { 
+            it.asJsonObject.get("name")?.asString == "home" 
+        }?.asJsonObject?.get("summary")?.asString ?: "0-0"
+        
+        val awayRecord = stats?.find { 
+            it.asJsonObject.get("name")?.asString == "road" 
+        }?.asJsonObject?.get("summary")?.asString ?: "0-0"
+        
+        val last10 = stats?.find { 
+            it.asJsonObject.get("name")?.asString == "lasttengames" 
+        }?.asJsonObject?.get("summary")?.asString ?: "0-0"
+        
+        return TeamStanding(
+            teamId = teamId,
+            teamName = teamNameMap[shortName] ?: shortName,
+            abbreviation = abbreviation,
+            logo = logo,
+            wins = wins,
+            losses = losses,
+            winPercent = winPercent,
+            gamesBehind = gamesBehind,
+            homeRecord = homeRecord,
+            awayRecord = awayRecord,
+            last10 = last10,
+            streak = streak,
+            conferenceRank = playoffSeed,
+            clincher = clincher
+        )
+    }
+    
+    private fun createEmptyStandings(): NBAStandings {
+        return NBAStandings(
+            eastern = ConferenceStandings("East", emptyList()),
+            western = ConferenceStandings("West", emptyList()),
             lastUpdated = LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
         )
     }
