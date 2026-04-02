@@ -17,7 +17,7 @@ import javax.swing.table.DefaultTableCellRenderer
 import javax.swing.table.DefaultTableModel
 
 /**
- * NBA 排名面板 - 东西部排名展示
+ * NBA 排名面板 - 东西部排名展示 + 季后赛对阵图
  */
 class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
     
@@ -26,8 +26,14 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
     
     // UI 组件
     private val refreshButton = JButton("刷新")
+    private val standingsButton = JButton("排名")
+    private val playoffButton = JButton("季后赛")
     private val statusLabel = JLabel("加载中...")
+    
+    private val contentPanel = JPanel(CardLayout())
     private val standingsPanel = JPanel()
+    private val playoffPanel = PlayoffBracketPanel()
+    
     private var currentStandings: NBAStandings? = null
     
     init {
@@ -39,9 +45,15 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
         // 顶部工具栏
         val toolBar = JPanel(FlowLayout(FlowLayout.LEFT, 10, 5))
         toolBar.add(refreshButton)
+        toolBar.add(Box.createHorizontalStrut(20))
+        toolBar.add(standingsButton)
+        toolBar.add(playoffButton)
+        toolBar.add(Box.createHorizontalStrut(20))
         toolBar.add(statusLabel)
         
         refreshButton.addActionListener { loadStandings() }
+        standingsButton.addActionListener { showStandings() }
+        playoffButton.addActionListener { showPlayoff() }
         
         // 排名内容区域
         standingsPanel.layout = BoxLayout(standingsPanel, BoxLayout.Y_AXIS)
@@ -51,10 +63,40 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
         scrollPane.preferredSize = Dimension(700, 500)
         scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
         
+        // 内容面板 - 卡片布局
+        contentPanel.add(scrollPane, "standings")
+        contentPanel.add(playoffPanel, "playoff")
+        
         add(toolBar, BorderLayout.NORTH)
-        add(scrollPane, BorderLayout.CENTER)
+        add(contentPanel, BorderLayout.CENTER)
         
         preferredSize = Dimension(720, 550)
+        
+        // 默认显示排名
+        standingsButton.isEnabled = false
+    }
+    
+    /**
+     * 显示排名视图
+     */
+    private fun showStandings() {
+        (contentPanel.layout as CardLayout).show(contentPanel, "standings")
+        standingsButton.isEnabled = false
+        playoffButton.isEnabled = true
+    }
+    
+    /**
+     * 显示季后赛对阵图
+     */
+    private fun showPlayoff() {
+        (contentPanel.layout as CardLayout).show(contentPanel, "playoff")
+        playoffButton.isEnabled = false
+        standingsButton.isEnabled = true
+        
+        // 更新季后赛数据
+        currentStandings?.let { standings ->
+            playoffPanel.updatePlayoffData(standings.eastern.teams, standings.western.teams)
+        }
     }
     
     /**
@@ -93,17 +135,34 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
         // 图例说明
         addLegend()
         
+        // 检查是否有数据
+        if (standings.eastern.teams.isEmpty() && standings.western.teams.isEmpty()) {
+            val noDataLabel = JLabel("⚠️ 暂无数据，请检查网络连接").apply {
+                alignmentX = Component.CENTER_ALIGNMENT
+                font = font.deriveFont(14f)
+            }
+            standingsPanel.add(noDataLabel)
+            standingsPanel.revalidate()
+            standingsPanel.repaint()
+            return
+        }
+        
         // 东西部并排显示
         val contentPanel = JPanel(GridLayout(1, 2, 20, 0))
+        contentPanel.isOpaque = false
         
         // 东部排名
         if (standings.eastern.teams.isNotEmpty()) {
             contentPanel.add(createConferencePanel("东部排名", standings.eastern.teams))
+        } else {
+            contentPanel.add(createEmptyPanel("东部排名"))
         }
         
         // 西部排名
         if (standings.western.teams.isNotEmpty()) {
             contentPanel.add(createConferencePanel("西部排名", standings.western.teams))
+        } else {
+            contentPanel.add(createEmptyPanel("西部排名"))
         }
         
         standingsPanel.add(contentPanel)
@@ -112,11 +171,29 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     
     /**
+     * 创建空面板（无数据时显示）
+     */
+    private fun createEmptyPanel(title: String): JPanel {
+        val panel = JPanel(BorderLayout())
+        panel.border = BorderFactory.createTitledBorder(
+            BorderFactory.createLineBorder(JBColor.border()),
+            title
+        )
+        val label = JLabel("暂无数据").apply {
+            horizontalAlignment = SwingConstants.CENTER
+        }
+        panel.add(label, BorderLayout.CENTER)
+        panel.preferredSize = Dimension(340, 200)
+        return panel
+    }
+    
+    /**
      * 添加图例说明
      */
     private fun addLegend() {
         val legendPanel = JPanel(FlowLayout(FlowLayout.CENTER, 15, 5))
         legendPanel.border = EmptyBorder(5, 0, 10, 0)
+        legendPanel.isOpaque = false
         
         legendPanel.add(createLegendItem("季后赛区", JBColor(0x4CAF50, 0x4CAF50)))
         legendPanel.add(createLegendItem("附加赛区", JBColor(0xFF9800, 0xFF9800)))
@@ -127,6 +204,7 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
     
     private fun createLegendItem(text: String, color: Color): JPanel {
         val panel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 0))
+        panel.isOpaque = false
         val dot = JLabel("●").apply {
             foreground = color
             font = font.deriveFont(Font.BOLD, 14f)
@@ -149,7 +227,7 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
             title
         )
         
-        // 表格列：排名、球队、胜、负、胜率、落后、近10场、状态
+        // 表格列：排名、球队、胜、负、胜率、落后、近10场、连胜
         val columnNames = arrayOf("排名", "球队", "胜", "负", "胜率", "落后", "近10场", "连胜")
         val model = object : DefaultTableModel(columnNames, 0) {
             override fun isCellEditable(row: Int, column: Int) = false
@@ -259,7 +337,7 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
             RankStatus.PLAYOFF_SPOT -> JBColor(0xE8F5E9, 0x1B3D1B)     // 淡绿色
             RankStatus.PLAY_IN -> JBColor(0xFFF3E0, 0x3D2D1B)          // 橙色
             RankStatus.OUT -> JBColor(0xF5F5F5, 0x2D2D2D)              // 灰色
-            else -> JBColor.PanelBackground
+            else -> UIManager.getColor("Panel.background") ?: JBColor(0xF5F5F5, 0x2D2D2D)
         }
     }
     
