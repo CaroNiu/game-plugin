@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.caro"
-version = "3.0.0"
+version = "3.0.4"
 
 repositories {
     mavenCentral()
@@ -21,25 +21,25 @@ repositories {
 
 dependencies {
     intellijPlatform {
-        // 升级到 IDEA 2025.3
-        intellijIdeaCommunity("2025.3")
+        // 使用 IDEA 2024.3 编译
+        intellijIdeaCommunity("2024.3")
         pluginVerifier()
         instrumentationTools()
     }
     
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.code.gson:gson:2.10.1")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.8.0")
 }
 
 intellijPlatform {
     pluginConfiguration {
         name = "NBA Live Score"
-        version = "3.0.0"
+        version = "3.0.4"
         
+        // 适配 IDEA 2024.2 到 2025.3+
         ideaVersion {
-            sinceBuild = "253"
-            untilBuild = "253.*"
+            sinceBuild = "242"
+            untilBuild = provider { null }  // 不设置上限
         }
     }
 }

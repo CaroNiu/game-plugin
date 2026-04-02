@@ -16,6 +16,9 @@
     </description>
     <depends>com.intellij.modules.platform</depends>
     
+    <!-- 兼容 IDEA 2024.2 (build 242) 到 2025.3+ -->
+    <idea-version since-build="242"/>
+    
     <actions>
         <group id="NBA.Score.Toolbar" text="NBA Score" description="NBA Live Score">
             <add-to-group group-id="MainToolBar" anchor="last"/>
@@ -31,11 +34,10 @@
     </extensions>
 
         <change-notes><![CDATA[
-        <h3>3.0.0</h3>
+        <h3>3.0.3</h3>
         <ul>
-            <li>新增功能：球队排名查看</li>
-            <li>优化比赛详情展示</li>
-            <li>修复已知问题</li>
+            <li>修复：兼容 IDEA 2025.3+ 版本 (build 253+)</li>
+            <li>优化：移除冗余的 coroutines 依赖</li>
         </ul>
     ]]></change-notes>
 
