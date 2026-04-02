@@ -34,6 +34,11 @@
     </extensions>
 
         <change-notes><![CDATA[
+        <h3>3.0.4</h3>
+        <ul>
+            <li>更新：全新的插件图标设计（篮球+比分板风格）</li>
+            <li>优化：更现代的视觉风格</li>
+        </ul>
         <h3>3.0.3</h3>
         <ul>
             <li>修复：兼容 IDEA 2025.3+ 版本 (build 253+)</li>
