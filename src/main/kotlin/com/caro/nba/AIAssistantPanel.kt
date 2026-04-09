@@ -194,21 +194,29 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
     private fun callAI(question: String): Result<String> {
         return try {
             val settings = NBASettingsState.getInstance()
+            
+            // 强制要求用户配置 API Key
+            if (settings.apiKey.isBlank()) {
+                return Result.failure(Exception("请先配置 API Key：点击「设置」按钮进行配置"))
+            }
+            
             val apiUrl = settings.apiUrl.ifEmpty { DEFAULT_API_URL }
-            val apiKey = settings.apiKey.ifEmpty { DEFAULT_API_KEY }
+            val apiKey = settings.apiKey
             val model = settings.model.ifEmpty { DEFAULT_MODEL }
             
-            // 构造系统提示词 + NBA 数据上下文
+            // 构造请求体 - 智谱 GLM-4.7-Flash 格式
             val systemPrompt = buildSystemPrompt()
             
             val requestBody = JsonObject().apply {
                 addProperty("model", model)
                 add("messages", gson.toJsonTree(listOf(
-                    mapOf("role" to "system", "content" to systemPrompt),
+                    mapOf("role" to "user", "content" to systemPrompt),
                     mapOf("role" to "user", "content" to question)
                 )))
-                addProperty("temperature", 0.7)
-                addProperty("max_tokens", 1000)
+                add("thinking", gson.toJsonTree(mapOf("type" to "enabled")))
+                addProperty("stream", true)
+                addProperty("max_tokens", 65536)
+                addProperty("temperature", 1.0)
             }
             
             val request = Request.Builder()
@@ -218,22 +226,55 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
             
+            // 流式输出处理
             val response = client.newCall(request).execute()
             
             if (!response.isSuccessful) {
                 return Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
             
-            val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
-            val json = gson.fromJson(body, JsonObject::class.java)
+            val body = response.body ?: return Result.failure(Exception("Empty response"))
+            val reader = body.charStream()
+            val buffer = CharArray(1024)
+            val resultBuilder = StringBuilder()
             
-            val content = json.getAsJsonArray("choices")
-                ?.get(0)?.asJsonObject
-                ?.getAsJsonObject("message")
-                ?.get("content")?.asString
-                ?: return Result.failure(Exception("Invalid response format"))
+            // 读取 SSE 流
+            while (true) {
+                val read = reader.read(buffer)
+                if (read == -1) break
+                
+                val chunk = String(buffer, 0, read)
+                // 解析 SSE 格式: data: {...}
+                chunk.lines().filter { it.startsWith("data: ") }.forEach { line ->
+                    val jsonStr = line.removePrefix("data: ").trim()
+                    if (jsonStr == "[DONE]") return@forEach
+                    
+                    try {
+                        val json = gson.fromJson(jsonStr, JsonObject::class.java)
+                        val delta = json.getAsJsonArray("choices")
+                            ?.get(0)?.asJsonObject
+                            ?.getAsJsonObject("delta")
+                            ?.get("content")?.asString
+                        if (delta != null) {
+                            resultBuilder.append(delta)
+                            // 实时更新 UI
+                            ApplicationManager.getApplication().invokeLater {
+                                appendOutput(delta)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        // 忽略解析错误
+                    }
+                }
+            }
             
-            Result.success(content)
+            reader.close()
+            
+            if (resultBuilder.isEmpty()) {
+                return Result.failure(Exception("No content received"))
+            }
+            
+            Result.success(resultBuilder.toString())
         } catch (e: Exception) {
             Result.failure(e)
         }
@@ -263,10 +304,11 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
     }
     
     companion object {
-        // 默认使用免费的 API（用户可以自行配置）
-        const val DEFAULT_API_URL = "https://api.deepseek.com/v1"
-        const val DEFAULT_API_KEY = "" // 用户需要配置自己的 key
-        const val DEFAULT_MODEL = "deepseek-chat"
+        // 智谱 GLM-4.7-Flash 默认配置
+        const val DEFAULT_API_URL = "https://open.bigmodel.cn/api/paas/v4"
+        const val DEFAULT_MODEL = "glm-4.7-flash"
+        
+        // 配置参考：https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash
     }
 }
 
@@ -346,11 +388,12 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         // 说明
         gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
         panel.add(JLabel("""
-            <html><body style='width:400px'>
+            <html><body style='width:450px'>
             <b>配置说明：</b><br>
-            • 支持 OpenAI 兼容的 API（DeepSeek、通义千问、本地模型等）<br>
+            • 默认使用智谱 GLM-4.7-Flash（免费模型）<br>
+            • 获取 API Key：<a href="https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash">查看文档</a><br>
             • API Key 会在本地保存，请勿泄露<br>
-            • 留空则使用默认值
+            • 支持其他 OpenAI 兼容 API（需修改 URL 和模型名称）
             </body></html>
         """.trimIndent()), gbc)
         

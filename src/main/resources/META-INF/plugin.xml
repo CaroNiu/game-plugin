@@ -41,6 +41,13 @@
     </extensions>
 
     <change-notes><![CDATA[
+        <h3>4.0.2</h3>
+        <ul>
+            <li>新增：流式输出支持（实时显示 AI 回复）</li>
+            <li>新增：智谱 GLM-4.7-Flash 默认配置</li>
+            <li>新增：thinking 参数支持</li>
+            <li>变更：强制要求用户配置 API Key</li>
+        </ul>
         <h3>4.0.1</h3>
         <ul>
             <li>优化：移除数据注入，让大模型基于自身知识回答</li>
