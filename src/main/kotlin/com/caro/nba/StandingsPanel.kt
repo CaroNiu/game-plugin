@@ -19,7 +19,10 @@ import javax.swing.table.DefaultTableModel
 /**
  * NBA 排名面板 - 东西部排名展示 + 季后赛对阵图
  */
-class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
+class StandingsPanel(
+    private val project: Project,
+    private val onPlayoffClick: (() -> Unit)? = null
+) : JPanel(BorderLayout()) {
     
     private val service = StandingsService()
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -89,13 +92,19 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
      * 显示季后赛对阵图
      */
     private fun showPlayoff() {
-        (contentPanel.layout as CardLayout).show(contentPanel, "playoff")
-        playoffButton.isEnabled = false
-        standingsButton.isEnabled = true
+        // 如果有回调，调用回调切换标签页
+        onPlayoffClick?.invoke()
         
         // 更新季后赛数据
         currentStandings?.let { standings ->
             playoffPanel.updatePlayoffData(standings.eastern.teams, standings.western.teams)
+        }
+        
+        // 如果没有回调，使用原来的 CardLayout 切换
+        if (onPlayoffClick == null) {
+            (contentPanel.layout as CardLayout).show(contentPanel, "playoff")
+            playoffButton.isEnabled = false
+            standingsButton.isEnabled = true
         }
     }
     
