@@ -286,20 +286,35 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
                 override fun getTableCellRendererComponent(
                     table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
                 ): Component {
-                    val comp = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
+                    val team = teams.getOrNull(row)
+                    
+                    // 根据季后赛锁定状态显示标记
+                    val displayText = if (team != null) {
+                        val status = team.getRankStatus()
+                        val marker = when (status) {
+                            RankStatus.DIVISION_LEADER -> " ✓ 分区冠军"
+                            RankStatus.CONFERENCE_LEADER -> " ✓ 联盟冠军"
+                            RankStatus.PLAYOFF_CLINCHED -> " ✓"
+                            else -> ""
+                        }
+                        "${team.teamName}$marker"
+                    } else {
+                        value?.toString() ?: ""
+                    }
+                    
+                    val comp = super.getTableCellRendererComponent(table, displayText, isSelected, hasFocus, row, column)
                     horizontalAlignment = SwingConstants.LEFT
                     
                     // 根据排名状态设置背景色
-                    val team = teams.getOrNull(row)
                     if (team != null && !isSelected) {
                         background = getRowBackgroundColor(team)
                     }
                     
                     // 季后赛已锁定的球队加粗
-                    val t = teams.getOrNull(row)
-                    if (t != null) {
-                        font = if (t.getRankStatus() == RankStatus.PLAYOFF_CLINCHED || 
-                                   t.getRankStatus() == RankStatus.DIVISION_LEADER) {
+                    if (team != null) {
+                        font = if (team.getRankStatus() == RankStatus.PLAYOFF_CLINCHED || 
+                                   team.getRankStatus() == RankStatus.DIVISION_LEADER ||
+                                   team.getRankStatus() == RankStatus.CONFERENCE_LEADER) {
                             font.deriveFont(Font.BOLD, 12f)
                         } else {
                             font.deriveFont(Font.PLAIN, 12f)
