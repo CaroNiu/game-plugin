@@ -41,6 +41,10 @@
     </extensions>
 
     <change-notes><![CDATA[
+        <h3>4.0.1</h3>
+        <ul>
+            <li>优化：移除数据注入，让大模型基于自身知识回答</li>
+        </ul>
         <h3>4.0.0</h3>
         <ul>
             <li>新增：AI 数据问答助手（支持自定义 API）</li>

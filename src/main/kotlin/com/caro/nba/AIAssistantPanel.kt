@@ -1,8 +1,5 @@
 package com.caro.nba
 
-import com.caro.nba.model.NBAStandings
-import com.caro.nba.model.TeamStanding
-import com.caro.nba.service.StandingsService
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.State
@@ -55,12 +52,8 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
     private val callTimestamps = mutableListOf<Long>()
     private val maxCallsPerMinute = 5
     
-    // 当前排名数据（用于构造 context）
-    private var currentStandings: NBAStandings? = null
-    
     init {
         setupUI()
-        loadStandingsData()
     }
     
     private fun setupUI() {
@@ -143,21 +136,6 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             addActionListener {
                 inputField.text = text
                 sendQuestion()
-            }
-        }
-    }
-    
-    private fun loadStandingsData() {
-        scope.launch {
-            val service = StandingsService()
-            val result = service.getStandings()
-            ApplicationManager.getApplication().invokeLater {
-                result.fold(
-                    onSuccess = { standings ->
-                        currentStandings = standings
-                    },
-                    onFailure = { }
-                )
             }
         }
     }
@@ -262,27 +240,17 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
     }
     
     private fun buildSystemPrompt(): String {
-        val sb = StringBuilder()
-        sb.append("你是一个NBA数据分析助手，可以回答用户关于NBA的问题。请用中文回答，简洁专业。\n\n")
-        
-        // 添加当前排名数据作为上下文
-        currentStandings?.let { standings ->
-            sb.append("【当前NBA排名数据】\n\n")
-            
-            sb.append("东部排名（前8）：\n")
-            standings.eastern.teams.take(8).forEach { team ->
-                sb.append("${team.conferenceRank}. ${team.teamName} ${team.wins}胜${team.losses}负 胜率${team.getWinPercentDisplay()}\n")
-            }
-            
-            sb.append("\n西部排名（前8）：\n")
-            standings.western.teams.take(8).forEach { team ->
-                sb.append("${team.conferenceRank}. ${team.teamName} ${team.wins}胜${team.losses}负 胜率${team.getWinPercentDisplay()}\n")
-            }
-            
-            sb.append("\n数据更新时间：${standings.lastUpdated}\n")
-        }
-        
-        return sb.toString()
+        return """你是一个NBA数据分析助手，可以回答用户关于NBA的问题。
+请用中文回答，简洁专业。
+
+你可以基于你的知识回答以下类型的问题：
+- NBA历史数据和记录
+- 球员和球队统计数据
+- 比赛分析和预测
+- 季后赛对阵和晋级情况
+- NBA规则和赛制说明
+
+请注意：你的知识有时间截止点，无法获取实时数据。"""
     }
     
     private fun appendOutput(text: String) {
