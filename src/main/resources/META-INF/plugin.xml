@@ -41,6 +41,11 @@
     </extensions>
 
     <change-notes><![CDATA[
+        <h3>4.0.4</h3>
+        <ul>
+            <li>新增：流式输出配置开关（部分模型不支持流式）</li>
+            <li>优化：支持流式和非流式两种响应模式</li>
+        </ul>
         <h3>4.0.3</h3>
         <ul>
             <li>新增：Max Tokens 和 Temperature 参数可配置</li>

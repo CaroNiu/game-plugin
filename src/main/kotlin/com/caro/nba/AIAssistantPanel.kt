@@ -205,8 +205,9 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             val model = settings.model.ifEmpty { DEFAULT_MODEL }
             val maxTokens = settings.maxTokens.toIntOrNull() ?: 65536
             val temperature = settings.temperature.toDoubleOrNull() ?: 1.0
+            val stream = settings.stream
             
-            // 构造请求体 - 智谱 GLM-4.7-Flash 格式
+            // 构造请求体
             val systemPrompt = buildSystemPrompt()
             
             val requestBody = JsonObject().apply {
@@ -216,7 +217,7 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
                     mapOf("role" to "user", "content" to question)
                 )))
                 add("thinking", gson.toJsonTree(mapOf("type" to "enabled")))
-                addProperty("stream", true)
+                addProperty("stream", stream)
                 addProperty("max_tokens", maxTokens)
                 addProperty("temperature", temperature)
             }
@@ -228,19 +229,34 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
                 .build()
             
-            // 流式输出处理
             val response = client.newCall(request).execute()
             
             if (!response.isSuccessful) {
                 return Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
             }
             
-            val body = response.body ?: return Result.failure(Exception("Empty response"))
-            val reader = body.charStream()
-            val buffer = CharArray(1024)
-            val resultBuilder = StringBuilder()
-            
-            // 读取 SSE 流
+            if (stream) {
+                // 流式输出处理
+                handleStreamResponse(response)
+            } else {
+                // 非流式输出处理
+                handleNonStreamResponse(response)
+            }
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+    
+    /**
+     * 处理流式响应
+     */
+    private fun handleStreamResponse(response: okhttp3.Response): Result<String> {
+        val body = response.body ?: return Result.failure(Exception("Empty response"))
+        val reader = body.charStream()
+        val buffer = CharArray(1024)
+        val resultBuilder = StringBuilder()
+        
+        return try {
             while (true) {
                 val read = reader.read(buffer)
                 if (read == -1) break
@@ -278,7 +294,29 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             
             Result.success(resultBuilder.toString())
         } catch (e: Exception) {
-            Result.failure(e)
+            reader.close()
+            return Result.failure(e)
+        }
+    }
+    
+    /**
+     * 处理非流式响应
+     */
+    private fun handleNonStreamResponse(response: okhttp3.Response): Result<String> {
+        val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+        
+        return try {
+            val json = gson.fromJson(body, JsonObject::class.java)
+            
+            val content = json.getAsJsonArray("choices")
+                ?.get(0)?.asJsonObject
+                ?.getAsJsonObject("message")
+                ?.get("content")?.asString
+                ?: return Result.failure(Exception("Invalid response format"))
+            
+            return Result.success(content)
+        } catch (e: Exception) {
+            return Result.failure(Exception("Failed to parse response: ${e.message}"))
         }
     }
     
@@ -325,6 +363,7 @@ class NBASettingsState : com.intellij.openapi.components.PersistentStateComponen
     var model: String = ""
     var maxTokens: String = ""
     var temperature: String = ""
+    var stream: Boolean = true  // 流式输出开关
     
     companion object {
         fun getInstance(): NBASettingsState {
@@ -340,6 +379,7 @@ class NBASettingsState : com.intellij.openapi.components.PersistentStateComponen
         this.model = state.model
         this.maxTokens = state.maxTokens
         this.temperature = state.temperature
+        this.stream = state.stream
     }
 }
 
@@ -352,6 +392,7 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
     private var modelField: JTextField? = null
     private var maxTokensField: JTextField? = null
     private var temperatureField: JTextField? = null
+    private var streamCheckBox: JCheckBox? = null
     
     override fun getDisplayName(): String = "NBA AI 助手"
     
@@ -411,8 +452,17 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
             panel.add(it, gbc)
         }
         
+        // Stream
+        gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        panel.add(JLabel("流式输出:"), gbc)
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        streamCheckBox = JCheckBox("启用流式输出（实时显示回复）", settings.stream).also {
+            it.toolTipText = "部分模型不支持流式输出，请根据实际情况选择"
+            panel.add(it, gbc)
+        }
+        
         // 说明
-        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
+        gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
         panel.add(JLabel("""
             <html><body style='width:450px'>
             <b>配置说明：</b><br>
@@ -432,7 +482,8 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
                String(apikeyField?.password ?: charArrayOf()) != settings.apiKey ||
                modelField?.text != settings.model ||
                maxTokensField?.text != settings.maxTokens ||
-               temperatureField?.text != settings.temperature
+               temperatureField?.text != settings.temperature ||
+               streamCheckBox?.isSelected != settings.stream
     }
     
     override fun apply() {
@@ -442,6 +493,7 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         settings.model = modelField?.text ?: ""
         settings.maxTokens = maxTokensField?.text ?: ""
         settings.temperature = temperatureField?.text ?: ""
+        settings.stream = streamCheckBox?.isSelected ?: true
     }
     
     override fun reset() {
@@ -451,5 +503,6 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         modelField?.text = settings.model
         maxTokensField?.text = settings.maxTokens.ifEmpty { "65536" }
         temperatureField?.text = settings.temperature.ifEmpty { "1.0" }
+        streamCheckBox?.isSelected = settings.stream
     }
 }
