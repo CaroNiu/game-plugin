@@ -48,10 +48,6 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
     }
     private val statusLabel = JLabel("准备就绪")
     
-    // 限流：1分钟最多5次
-    private val callTimestamps = mutableListOf<Long>()
-    private val maxCallsPerMinute = 5
-    
     init {
         setupUI()
     }
@@ -100,10 +96,6 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             isOpaque = false
             border = EmptyBorder(10, 0, 0, 0)
             add(statusLabel, BorderLayout.WEST)
-            add(JLabel("限流：每分钟最多5次调用").apply { 
-                font = font.deriveFont(Font.ITALIC, 11f)
-                foreground = JBColor.GRAY
-            }, BorderLayout.EAST)
         }
         
         // 布局
@@ -147,12 +139,6 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             return
         }
         
-        // 检查限流
-        if (!checkRateLimit()) {
-            statusLabel.text = "⚠️ 调用过于频繁，请稍后再试"
-            return
-        }
-        
         sendButton.isEnabled = false
         statusLabel.text = "🤔 思考中..."
         
@@ -172,22 +158,6 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
                     }
                 )
             }
-        }
-    }
-    
-    private fun checkRateLimit(): Boolean {
-        val now = System.currentTimeMillis()
-        val oneMinuteAgo = now - 60_000
-        
-        // 移除1分钟前的记录
-        callTimestamps.removeAll { it < oneMinuteAgo }
-        
-        // 检查是否超过限制
-        return if (callTimestamps.size < maxCallsPerMinute) {
-            callTimestamps.add(now)
-            true
-        } else {
-            false
         }
     }
     
@@ -223,7 +193,7 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             }
             
             val request = Request.Builder()
-                .url("$apiUrl/chat/completions")
+                .url(apiUrl)  // 直接使用用户配置的完整 URL
                 .header("Authorization", "Bearer $apiKey")
                 .header("Content-Type", "application/json")
                 .post(requestBody.toString().toRequestBody("application/json".toMediaType()))
@@ -388,7 +358,7 @@ class NBASettingsState : com.intellij.openapi.components.PersistentStateComponen
  */
 class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
     private var apiurlField: JTextField? = null
-    private var apikeyField: JPasswordField? = null
+    private var apikeyField: JTextField? = null
     private var modelField: JTextField? = null
     private var maxTokensField: JTextField? = null
     private var temperatureField: JTextField? = null
@@ -413,15 +383,17 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         panel.add(JLabel("API URL:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
         apiurlField = JTextField(settings.apiUrl, 40).also {
-            it.toolTipText = "智谱：https://open.bigmodel.cn/api/paas/v4"
+            it.toolTipText = "完整请求地址"
             panel.add(it, gbc)
         }
         
-        // API Key
+        // API Key（脱敏显示）
         gbc.gridx = 0; gbc.gridy = 1; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         panel.add(JLabel("API Key:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
-        apikeyField = JPasswordField(settings.apiKey, 40).also {
+        val maskedKey = maskApiKey(settings.apiKey)
+        apikeyField = JTextField(maskedKey, 40).also {
+            it.toolTipText = "API 密钥（脱敏显示）"
             panel.add(it, gbc)
         }
         
@@ -430,7 +402,7 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         panel.add(JLabel("模型:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
         modelField = JTextField(settings.model, 40).also {
-            it.toolTipText = "智谱：glm-4.7-flash | DeepSeek：deepseek-chat"
+            it.toolTipText = "模型名称"
             panel.add(it, gbc)
         }
         
@@ -438,8 +410,8 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         panel.add(JLabel("Max Tokens:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
-        maxTokensField = JTextField(settings.maxTokens.ifEmpty { "65536" }, 40).also {
-            it.toolTipText = "最大输出 token 数，默认 65536"
+        maxTokensField = JTextField(settings.maxTokens, 40).also {
+            it.toolTipText = "最大输出 token 数"
             panel.add(it, gbc)
         }
         
@@ -447,8 +419,8 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         panel.add(JLabel("Temperature:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
-        temperatureField = JTextField(settings.temperature.ifEmpty { "1.0" }, 40).also {
-            it.toolTipText = "温度参数 0-2，默认 1.0"
+        temperatureField = JTextField(settings.temperature, 40).also {
+            it.toolTipText = "温度参数 0-2"
             panel.add(it, gbc)
         }
         
@@ -456,30 +428,48 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         gbc.gridx = 0; gbc.gridy = 5; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
         panel.add(JLabel("流式输出:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
-        streamCheckBox = JCheckBox("启用流式输出（实时显示回复）", settings.stream).also {
-            it.toolTipText = "部分模型不支持流式输出，请根据实际情况选择"
+        streamCheckBox = JCheckBox("启用流式输出", settings.stream).also {
             panel.add(it, gbc)
         }
         
-        // 说明
+        // 说明（简化）
         gbc.gridx = 0; gbc.gridy = 6; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
         panel.add(JLabel("""
-            <html><body style='width:450px'>
-            <b>配置说明：</b><br>
-            • 默认使用智谱 GLM-4.7-Flash（免费模型）<br>
-            • 获取 API Key：<a href="https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash">查看文档</a><br>
-            • API Key 会在本地保存，请勿泄露<br>
-            • 支持其他 OpenAI 兼容 API（需修改 URL 和模型名称）
+            <html><body style='width:500px'>
+            <b>参数说明：</b><br>
+            • <b>API URL</b>: 完整请求地址（含路径）<br>
+            • <b>API Key</b>: 认证密钥<br>
+            • <b>模型</b>: 模型名称（如 glm-4.7-flash）<br>
+            • <b>Max Tokens</b>: 最大输出长度<br>
+            • <b>Temperature</b>: 随机性控制（0-2）<br>
+            • <b>流式输出</b>: 实时显示回复（部分模型不支持）<br><br>
+            <b>参考文档：</b> <a href="https://docs.bigmodel.cn/cn/guide/models/free/glm-4.7-flash">智谱 GLM-4.7-Flash</a>
             </body></html>
         """.trimIndent()), gbc)
         
         return panel
     }
     
+    /**
+     * API Key 脱敏：保留前3位和后3位，中间用 *** 替代
+     */
+    private fun maskApiKey(key: String): String {
+        if (key.length <= 6) return key
+        return key.take(3) + "***" + key.takeLast(3)
+    }
+    
     override fun isModified(): Boolean {
         val settings = NBASettingsState.getInstance()
+        // API Key 比较：需要还原脱敏前的值
+        val currentKey = apikeyField?.text ?: ""
+        val keyChanged = if (currentKey.contains("***")) {
+            false  // 脱敏状态，未修改
+        } else {
+            currentKey != settings.apiKey
+        }
+        
         return apiurlField?.text != settings.apiUrl ||
-               String(apikeyField?.password ?: charArrayOf()) != settings.apiKey ||
+               keyChanged ||
                modelField?.text != settings.model ||
                maxTokensField?.text != settings.maxTokens ||
                temperatureField?.text != settings.temperature ||
@@ -489,7 +479,13 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
     override fun apply() {
         val settings = NBASettingsState.getInstance()
         settings.apiUrl = apiurlField?.text ?: ""
-        settings.apiKey = String(apikeyField?.password ?: charArrayOf())
+        // API Key：如果未修改（脱敏状态），保持原值
+        val currentKey = apikeyField?.text ?: ""
+        settings.apiKey = if (currentKey.contains("***")) {
+            settings.apiKey  // 保持原值
+        } else {
+            currentKey  // 使用新值
+        }
         settings.model = modelField?.text ?: ""
         settings.maxTokens = maxTokensField?.text ?: ""
         settings.temperature = temperatureField?.text ?: ""
@@ -499,10 +495,10 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
     override fun reset() {
         val settings = NBASettingsState.getInstance()
         apiurlField?.text = settings.apiUrl
-        apikeyField?.text = settings.apiKey
+        apikeyField?.text = maskApiKey(settings.apiKey)
         modelField?.text = settings.model
-        maxTokensField?.text = settings.maxTokens.ifEmpty { "65536" }
-        temperatureField?.text = settings.temperature.ifEmpty { "1.0" }
+        maxTokensField?.text = settings.maxTokens
+        temperatureField?.text = settings.temperature
         streamCheckBox?.isSelected = settings.stream
     }
 }
