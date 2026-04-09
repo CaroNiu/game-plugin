@@ -31,17 +31,22 @@ class NBAScoreToolWindowFactory : ToolWindowFactory {
 class NBAScoreMainPanel(project: Project) : JBTabbedPane() {
     
     private val scorePanel = NBAScorePanel(project)
-    private val standingsPanel = StandingsPanel(project)
+    private val standingsPanel: StandingsPanel
+    private val playoffPanel = PlayoffBracketPanel()
     private val aiPanel = AIAssistantPanel()
     
     init {
         tabPlacement = TOP
         
+        // 创建排名面板，并设置季后赛按钮回调
+        standingsPanel = StandingsPanel(project) {
+            // 点击季后赛按钮时切换到季后赛标签页
+            selectedIndex = 2
+        }
+        
         addTab("🏀 比分", scorePanel)
         addTab("📊 排名", standingsPanel)
-        addTab("🏆 季后赛", JPanel().apply { 
-            add(JLabel("季后赛对阵图（点击排名页面的「季后赛」按钮查看）")) 
-        })
+        addTab("🏆 季后赛", playoffPanel)
         addTab("🤖 AI助手", aiPanel)
         
         // 设置标签提示
