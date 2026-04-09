@@ -50,14 +50,14 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         val mainPanel = JPanel(GridLayout(1, 3, 20, 0))
         mainPanel.isOpaque = false
         
-        // 东部对阵图
-        mainPanel.add(createConferenceBracket("🏀 东部"))
+        // 东部对阵图（正常顺序）
+        mainPanel.add(createConferenceBracket("🏀 东部", reverse = false))
         
         // 总决赛区域
         mainPanel.add(createFinalsPanel())
         
-        // 西部对阵图
-        mainPanel.add(createConferenceBracket("🏀 西部"))
+        // 西部对阵图（反转顺序，使决赛朝向总决赛）
+        mainPanel.add(createConferenceBracket("🏀 西部", reverse = true))
         
         add(mainPanel, BorderLayout.CENTER)
         
@@ -76,8 +76,9 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
     
     /**
      * 创建分区对阵图
+     * @param reverse 是否反转列顺序（西部需要反转，使决赛朝向总决赛中心）
      */
-    private fun createConferenceBracket(title: String): JPanel {
+    private fun createConferenceBracket(title: String, reverse: Boolean = false): JPanel {
         val panel = JPanel(BorderLayout())
         panel.isOpaque = false
         
@@ -95,16 +96,27 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         bracketPanel.layout = BoxLayout(bracketPanel, BoxLayout.X_AXIS)
         bracketPanel.isOpaque = false
         
-        // 首轮 (4组对决)
-        bracketPanel.add(createRoundColumn("首轮", listOf("1", "8", "4", "5", "3", "6", "2", "7")))
-        bracketPanel.add(Box.createHorizontalStrut(5))
+        // 创建各列
+        val firstRound = createRoundColumn("首轮", listOf("1", "8", "4", "5", "3", "6", "2", "7"))
+        val semiFinal = createRoundColumn("半决赛", listOf("", ""))
+        val conferenceFinal = createRoundColumn("决赛", listOf(""))
         
-        // 半决赛 (2组对决)
-        bracketPanel.add(createRoundColumn("半决赛", listOf("", "")))
-        bracketPanel.add(Box.createHorizontalStrut(5))
-        
-        // 分区决赛 (1组对决)
-        bracketPanel.add(createRoundColumn("决赛", listOf("")))
+        // 根据是否反转决定列顺序
+        if (reverse) {
+            // 西部：决赛 → 半决赛 → 首轮（决赛靠近总决赛）
+            bracketPanel.add(conferenceFinal)
+            bracketPanel.add(Box.createHorizontalStrut(5))
+            bracketPanel.add(semiFinal)
+            bracketPanel.add(Box.createHorizontalStrut(5))
+            bracketPanel.add(firstRound)
+        } else {
+            // 东部：首轮 → 半决赛 → 决赛（决赛靠近总决赛）
+            bracketPanel.add(firstRound)
+            bracketPanel.add(Box.createHorizontalStrut(5))
+            bracketPanel.add(semiFinal)
+            bracketPanel.add(Box.createHorizontalStrut(5))
+            bracketPanel.add(conferenceFinal)
+        }
         
         panel.add(bracketPanel, BorderLayout.CENTER)
         return panel
