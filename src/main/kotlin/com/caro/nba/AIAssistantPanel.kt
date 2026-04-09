@@ -203,6 +203,8 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
             val apiUrl = settings.apiUrl.ifEmpty { DEFAULT_API_URL }
             val apiKey = settings.apiKey
             val model = settings.model.ifEmpty { DEFAULT_MODEL }
+            val maxTokens = settings.maxTokens.toIntOrNull() ?: 65536
+            val temperature = settings.temperature.toDoubleOrNull() ?: 1.0
             
             // 构造请求体 - 智谱 GLM-4.7-Flash 格式
             val systemPrompt = buildSystemPrompt()
@@ -215,8 +217,8 @@ class AIAssistantPanel : JPanel(BorderLayout()) {
                 )))
                 add("thinking", gson.toJsonTree(mapOf("type" to "enabled")))
                 addProperty("stream", true)
-                addProperty("max_tokens", 65536)
-                addProperty("temperature", 1.0)
+                addProperty("max_tokens", maxTokens)
+                addProperty("temperature", temperature)
             }
             
             val request = Request.Builder()
@@ -321,6 +323,8 @@ class NBASettingsState : com.intellij.openapi.components.PersistentStateComponen
     var apiUrl: String = ""
     var apiKey: String = ""
     var model: String = ""
+    var maxTokens: String = ""
+    var temperature: String = ""
     
     companion object {
         fun getInstance(): NBASettingsState {
@@ -334,6 +338,8 @@ class NBASettingsState : com.intellij.openapi.components.PersistentStateComponen
         this.apiUrl = state.apiUrl
         this.apiKey = state.apiKey
         this.model = state.model
+        this.maxTokens = state.maxTokens
+        this.temperature = state.temperature
     }
 }
 
@@ -344,6 +350,8 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
     private var apiurlField: JTextField? = null
     private var apikeyField: JPasswordField? = null
     private var modelField: JTextField? = null
+    private var maxTokensField: JTextField? = null
+    private var temperatureField: JTextField? = null
     
     override fun getDisplayName(): String = "NBA AI 助手"
     
@@ -364,7 +372,7 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         panel.add(JLabel("API URL:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
         apiurlField = JTextField(settings.apiUrl, 40).also {
-            it.toolTipText = "默认：https://api.deepseek.com/v1"
+            it.toolTipText = "智谱：https://open.bigmodel.cn/api/paas/v4"
             panel.add(it, gbc)
         }
         
@@ -381,12 +389,30 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         panel.add(JLabel("模型:"), gbc)
         gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
         modelField = JTextField(settings.model, 40).also {
-            it.toolTipText = "默认：deepseek-chat"
+            it.toolTipText = "智谱：glm-4.7-flash | DeepSeek：deepseek-chat"
+            panel.add(it, gbc)
+        }
+        
+        // Max Tokens
+        gbc.gridx = 0; gbc.gridy = 3; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        panel.add(JLabel("Max Tokens:"), gbc)
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        maxTokensField = JTextField(settings.maxTokens.ifEmpty { "65536" }, 40).also {
+            it.toolTipText = "最大输出 token 数，默认 65536"
+            panel.add(it, gbc)
+        }
+        
+        // Temperature
+        gbc.gridx = 0; gbc.gridy = 4; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0.0
+        panel.add(JLabel("Temperature:"), gbc)
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0
+        temperatureField = JTextField(settings.temperature.ifEmpty { "1.0" }, 40).also {
+            it.toolTipText = "温度参数 0-2，默认 1.0"
             panel.add(it, gbc)
         }
         
         // 说明
-        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
+        gbc.gridx = 0; gbc.gridy = 5; gbc.gridwidth = 2; gbc.insets = Insets(15, 5, 5, 5)
         panel.add(JLabel("""
             <html><body style='width:450px'>
             <b>配置说明：</b><br>
@@ -404,7 +430,9 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         val settings = NBASettingsState.getInstance()
         return apiurlField?.text != settings.apiUrl ||
                String(apikeyField?.password ?: charArrayOf()) != settings.apiKey ||
-               modelField?.text != settings.model
+               modelField?.text != settings.model ||
+               maxTokensField?.text != settings.maxTokens ||
+               temperatureField?.text != settings.temperature
     }
     
     override fun apply() {
@@ -412,6 +440,8 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         settings.apiUrl = apiurlField?.text ?: ""
         settings.apiKey = String(apikeyField?.password ?: charArrayOf())
         settings.model = modelField?.text ?: ""
+        settings.maxTokens = maxTokensField?.text ?: ""
+        settings.temperature = temperatureField?.text ?: ""
     }
     
     override fun reset() {
@@ -419,5 +449,7 @@ class NBASettingsConfigurable : com.intellij.openapi.options.Configurable {
         apiurlField?.text = settings.apiUrl
         apikeyField?.text = settings.apiKey
         modelField?.text = settings.model
+        maxTokensField?.text = settings.maxTokens.ifEmpty { "65536" }
+        temperatureField?.text = settings.temperature.ifEmpty { "1.0" }
     }
 }

@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.caro"
-version = "4.0.2"
+version = "4.0.3"
 
 repositories {
     mavenCentral()
@@ -34,7 +34,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         name = "NBA Live Score"
-        version = "4.0.2"
+        version = "4.0.3"
         
         // 适配 IDEA 2024.2 到 2025.3+
         ideaVersion {

@@ -41,6 +41,11 @@
     </extensions>
 
     <change-notes><![CDATA[
+        <h3>4.0.3</h3>
+        <ul>
+            <li>新增：Max Tokens 和 Temperature 参数可配置</li>
+            <li>优化：所有请求参数均基于用户配置</li>
+        </ul>
         <h3>4.0.2</h3>
         <ul>
             <li>新增：流式输出支持（实时显示 AI 回复）</li>
