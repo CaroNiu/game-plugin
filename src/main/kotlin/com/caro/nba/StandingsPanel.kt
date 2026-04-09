@@ -292,9 +292,9 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
                     val displayText = if (team != null) {
                         val status = team.getRankStatus()
                         val marker = when (status) {
-                            RankStatus.DIVISION_LEADER -> " ✓ 分区冠军"
-                            RankStatus.CONFERENCE_LEADER -> " ✓ 联盟冠军"
-                            RankStatus.PLAYOFF_CLINCHED -> " ✓"
+                            RankStatus.DIVISION_LEADER -> " ✓ 赛区第1"
+                            RankStatus.CONFERENCE_LEADER -> " ✓ 联盟第1"
+                            RankStatus.PLAYOFF_CLINCHED -> " ✓ 已锁定"
                             else -> ""
                         }
                         "${team.teamName}$marker"
