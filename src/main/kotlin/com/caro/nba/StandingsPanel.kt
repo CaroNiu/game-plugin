@@ -291,10 +291,7 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
                     // 根据季后赛锁定状态显示标记
                     val displayText = if (team != null) {
                         val status = team.getRankStatus()
-                        val marker = when (status) {
-                            RankStatus.DIVISION_LEADER, RankStatus.CONFERENCE_LEADER, RankStatus.PLAYOFF_CLINCHED -> " ✓"
-                            else -> ""
-                        }
+                        val marker = if (status == RankStatus.PLAYOFF_CLINCHED) " ✓" else ""
                         "${team.teamName}$marker"
                     } else {
                         value?.toString() ?: ""
@@ -310,9 +307,7 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
                     
                     // 季后赛已锁定的球队加粗
                     if (team != null) {
-                        font = if (team.getRankStatus() == RankStatus.PLAYOFF_CLINCHED || 
-                                   team.getRankStatus() == RankStatus.DIVISION_LEADER ||
-                                   team.getRankStatus() == RankStatus.CONFERENCE_LEADER) {
+                        font = if (team.getRankStatus() == RankStatus.PLAYOFF_CLINCHED) {
                             font.deriveFont(Font.BOLD, 12f)
                         } else {
                             font.deriveFont(Font.PLAIN, 12f)
@@ -345,12 +340,10 @@ class StandingsPanel(private val project: Project) : JPanel(BorderLayout()) {
      */
     private fun getRowBackgroundColor(team: TeamStanding): Color {
         return when (team.getRankStatus()) {
-            RankStatus.DIVISION_LEADER -> JBColor(0xE8F5E9, 0x2D4A2D) // 深绿色
-            RankStatus.PLAYOFF_CLINCHED -> JBColor(0xC8E6C9, 0x1B3D1B) // 浅绿色
-            RankStatus.PLAYOFF_SPOT -> JBColor(0xE8F5E9, 0x1B3D1B)     // 淡绿色
-            RankStatus.PLAY_IN -> JBColor(0xFFF3E0, 0x3D2D1B)          // 橙色
-            RankStatus.OUT -> JBColor(0xF5F5F5, 0x2D2D2D)              // 灰色
-            else -> UIManager.getColor("Panel.background") ?: JBColor(0xF5F5F5, 0x2D2D2D)
+            RankStatus.PLAYOFF_CLINCHED -> JBColor(0xC8E6C9, 0x1B3D1B) // 已锁定季后赛
+            RankStatus.PLAYOFF_SPOT -> JBColor(0xE8F5E9, 0x1B3D1B)     // 季后赛区
+            RankStatus.PLAY_IN -> JBColor(0xFFF3E0, 0x3D2D1B)          // 附加赛区
+            RankStatus.OUT -> JBColor(0xF5F5F5, 0x2D2D2D)              // 已淘汰
         }
     }
     

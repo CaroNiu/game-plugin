@@ -46,8 +46,9 @@ data class TeamStanding(
      */
     fun getRankStatus(): RankStatus {
         return when {
-            clincher.contains("z") -> RankStatus.DIVISION_LEADER  // 分区冠军
-            clincher.contains("y") -> RankStatus.CONFERENCE_LEADER // 分区冠军
+            clincher.contains("*") -> RankStatus.PLAYOFF_CLINCHED  // 联盟第一
+            clincher.contains("z") -> RankStatus.PLAYOFF_CLINCHED  // 分区冠军
+            clincher.contains("y") -> RankStatus.PLAYOFF_CLINCHED  // 赛区冠军
             clincher.contains("x") -> RankStatus.PLAYOFF_CLINCHED  // 已锁定季后赛
             conferenceRank in 1..6 -> RankStatus.PLAYOFF_SPOT      // 季后赛区
             conferenceRank in 7..10 -> RankStatus.PLAY_IN          // 附加赛区
@@ -57,9 +58,7 @@ data class TeamStanding(
 }
 
 enum class RankStatus {
-    DIVISION_LEADER,    // 分区冠军
-    CONFERENCE_LEADER,  // 联盟冠军
-    PLAYOFF_CLINCHED,   // 已锁定季后赛
+    PLAYOFF_CLINCHED,   // 已锁定季后赛（包括联盟第一、赛区冠军、已锁定）
     PLAYOFF_SPOT,       // 季后赛区
     PLAY_IN,            // 附加赛区
     OUT                 // 淘汰
