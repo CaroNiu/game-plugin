@@ -9,13 +9,28 @@ import javax.swing.border.EmptyBorder
 import javax.swing.border.LineBorder
 
 /**
- * 季后赛对阵图面板 - 现代风格
- * 显示东西部季后赛对阵：首轮 → 半决赛 → 分区决赛 → 总决赛
+ * 季后赛对阵图面板 - 真实数据版本
+ * 显示东西部季后赛对阵：附加赛 → 首轮 → 半决赛 → 分区决赛 → 总决赛
  */
 class PlayoffBracketPanel : JPanel(BorderLayout()) {
     
     private var easternTeams = listOf<TeamStanding>()
     private var westernTeams = listOf<TeamStanding>()
+    
+    // 存储各轮次的对阵面板引用，用于数据更新
+    private var easternFirstRound: JPanel? = null
+    private var easternSemiFinal: JPanel? = null
+    private var easternFinal: JPanel? = null
+    private var westernFirstRound: JPanel? = null
+    private var westernSemiFinal: JPanel? = null
+    private var westernFinal: JPanel? = null
+    private var easternPlayIn: JPanel? = null
+    private var westernPlayIn: JPanel? = null
+    
+    // 总决赛球队
+    private var easternChampion: JPanel? = null
+    private var westernChampion: JPanel? = null
+    private var finalsWinner: JPanel? = null
     
     private val teamColors = mapOf(
         "DET" to Color(0xC8102E), "BOS" to Color(0x007A33), "NY" to Color(0x006BB6), "CLE" to Color(0x860038),
@@ -51,13 +66,13 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         mainPanel.isOpaque = false
         
         // 东部对阵图（正常顺序）
-        mainPanel.add(createConferenceBracket("🏀 东部", reverse = false))
+        mainPanel.add(createConferenceBracket("🏀 东部", reverse = false, isEastern = true))
         
         // 总决赛区域
         mainPanel.add(createFinalsPanel())
         
         // 西部对阵图（反转顺序，使决赛朝向总决赛）
-        mainPanel.add(createConferenceBracket("🏀 西部", reverse = true))
+        mainPanel.add(createConferenceBracket("🏀 西部", reverse = true, isEastern = false))
         
         add(mainPanel, BorderLayout.CENTER)
         
@@ -71,14 +86,13 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         }
         add(titleLabel, BorderLayout.NORTH)
         
-        preferredSize = Dimension(900, 450)
+        preferredSize = Dimension(1100, 550)
     }
     
     /**
      * 创建分区对阵图
-     * @param reverse 是否反转列顺序（西部需要反转，使决赛朝向总决赛中心）
      */
-    private fun createConferenceBracket(title: String, reverse: Boolean = false): JPanel {
+    private fun createConferenceBracket(title: String, reverse: Boolean = false, isEastern: Boolean): JPanel {
         val panel = JPanel(BorderLayout())
         panel.isOpaque = false
         
@@ -96,21 +110,34 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         bracketPanel.layout = BoxLayout(bracketPanel, BoxLayout.X_AXIS)
         bracketPanel.isOpaque = false
         
-        // 创建各列
-        val firstRound = createRoundColumn("首轮", listOf("1", "8", "4", "5", "3", "6", "2", "7"))
-        val semiFinal = createRoundColumn("半决赛", listOf("", ""))
-        val conferenceFinal = createRoundColumn("决赛", listOf(""))
+        // 附加赛（7-10名）
+        val playIn = createPlayInColumn(if (isEastern) easternTeams else westernTeams)
+        if (isEastern) easternPlayIn = playIn else westernPlayIn = playIn
+        
+        // 首轮
+        val firstRound = createFirstRoundColumn(if (isEastern) easternTeams else westernTeams)
+        if (isEastern) easternFirstRound = firstRound else westernFirstRound = firstRound
+        
+        // 半决赛
+        val semiFinal = createSemiFinalColumn()
+        if (isEastern) easternSemiFinal = semiFinal else westernSemiFinal = semiFinal
+        
+        // 决赛
+        val conferenceFinal = createConferenceFinalColumn()
+        if (isEastern) easternFinal = conferenceFinal else westernFinal = conferenceFinal
         
         // 根据是否反转决定列顺序
         if (reverse) {
-            // 西部：决赛 → 半决赛 → 首轮（决赛靠近总决赛）
             bracketPanel.add(conferenceFinal)
             bracketPanel.add(Box.createHorizontalStrut(5))
             bracketPanel.add(semiFinal)
             bracketPanel.add(Box.createHorizontalStrut(5))
             bracketPanel.add(firstRound)
+            bracketPanel.add(Box.createHorizontalStrut(5))
+            bracketPanel.add(playIn)
         } else {
-            // 东部：首轮 → 半决赛 → 决赛（决赛靠近总决赛）
+            bracketPanel.add(playIn)
+            bracketPanel.add(Box.createHorizontalStrut(5))
             bracketPanel.add(firstRound)
             bracketPanel.add(Box.createHorizontalStrut(5))
             bracketPanel.add(semiFinal)
@@ -119,6 +146,115 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         }
         
         panel.add(bracketPanel, BorderLayout.CENTER)
+        return panel
+    }
+    
+    /**
+     * 创建附加赛列
+     */
+    private fun createPlayInColumn(teams: List<TeamStanding>): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.isOpaque = false
+        
+        // 标题
+        panel.add(JLabel("附加赛").apply {
+            font = font.deriveFont(Font.BOLD, 11f)
+            alignmentX = Component.CENTER_ALIGNMENT
+            foreground = JBColor(0xFF9800, 0xFF9800)
+        })
+        panel.add(Box.createVerticalStrut(5))
+        
+        // 附加赛对阵：7vs8，9vs10
+        val playInTeams = teams.filter { it.conferenceRank in 7..10 }.sortedBy { it.conferenceRank }
+        
+        if (playInTeams.size >= 4) {
+            // 第7 vs 第8
+            panel.add(createMatchupCard(playInTeams[0], playInTeams[1]))
+            panel.add(Box.createVerticalStrut(15))
+            // 第9 vs 第10
+            panel.add(createMatchupCard(playInTeams[2], playInTeams[3]))
+        } else if (playInTeams.size >= 2) {
+            panel.add(createMatchupCard(playInTeams[0], playInTeams[1]))
+        } else {
+            // 占位
+            panel.add(createPlaceholderCard("待确定"))
+        }
+        
+        return panel
+    }
+    
+    /**
+     * 创建首轮列
+     */
+    private fun createFirstRoundColumn(teams: List<TeamStanding>): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.isOpaque = false
+        
+        panel.add(JLabel("首轮").apply {
+            font = font.deriveFont(Font.BOLD, 11f)
+            alignmentX = Component.CENTER_ALIGNMENT
+            foreground = JBColor(0x666666, 0x999999)
+        })
+        panel.add(Box.createVerticalStrut(5))
+        
+        // 获取排名前8的球队
+        val playoffTeams = teams.filter { it.conferenceRank in 1..8 }.sortedBy { it.conferenceRank }
+        
+        if (playoffTeams.size >= 8) {
+            // 4组首轮对决
+            for (i in 0 until 8 step 2) {
+                panel.add(createMatchupCard(playoffTeams[i], playoffTeams[i + 1]))
+                if (i < 6) panel.add(Box.createVerticalStrut(8))
+            }
+        } else {
+            // 静态占位
+            panel.add(createPlaceholderCard("等待确定"))
+        }
+        
+        return panel
+    }
+    
+    /**
+     * 创建半决赛列
+     */
+    private fun createSemiFinalColumn(): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.isOpaque = false
+        
+        panel.add(JLabel("半决赛").apply {
+            font = font.deriveFont(Font.BOLD, 11f)
+            alignmentX = Component.CENTER_ALIGNMENT
+            foreground = JBColor(0x666666, 0x999999)
+        })
+        panel.add(Box.createVerticalStrut(40))
+        
+        panel.add(createPlaceholderCard(""))
+        panel.add(Box.createVerticalStrut(60))
+        panel.add(createPlaceholderCard(""))
+        
+        return panel
+    }
+    
+    /**
+     * 创建分区决赛列
+     */
+    private fun createConferenceFinalColumn(): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.isOpaque = false
+        
+        panel.add(JLabel("决赛").apply {
+            font = font.deriveFont(Font.BOLD, 11f)
+            alignmentX = Component.CENTER_ALIGNMENT
+            foreground = JBColor(0xFFD700, 0xFFD700)
+        })
+        panel.add(Box.createVerticalStrut(80))
+        
+        panel.add(createPlaceholderCard(""))
+        
         return panel
     }
     
@@ -143,10 +279,24 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         championPanel.layout = BoxLayout(championPanel, BoxLayout.Y_AXIS)
         championPanel.isOpaque = false
         
-        championPanel.add(Box.createVerticalStrut(50))
+        // 西部冠军
+        val westCard = createChampionCard("西部冠军", null)
+        westernChampion = westCard
+        championPanel.add(westCard)
         
-        val card = createChampionCard()
-        championPanel.add(card)
+        championPanel.add(Box.createVerticalStrut(60))
+        
+        // 总冠军
+        val winnerCard = createChampionCard("总冠军", null)
+        finalsWinner = winnerCard
+        championPanel.add(winnerCard)
+        
+        championPanel.add(Box.createVerticalStrut(60))
+        
+        // 东部冠军
+        val eastCard = createChampionCard("东部冠军", null)
+        easternChampion = eastCard
+        championPanel.add(eastCard)
         
         panel.add(championPanel, BorderLayout.CENTER)
         return panel
@@ -155,69 +305,62 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
     /**
      * 创建冠军卡片
      */
-    private fun createChampionCard(): JPanel {
+    private fun createChampionCard(title: String, team: TeamStanding?): JPanel {
         val panel = JPanel()
         panel.layout = BorderLayout()
-        panel.preferredSize = Dimension(120, 80)
+        panel.preferredSize = Dimension(120, 50)
         panel.background = JBColor(0xFFD700, 0x333333)
         panel.border = LineBorder(JBColor(0xDAA520, 0x555555), 2, true)
         
-        val label = JLabel("待定").apply {
+        val displayText = team?.let { "${it.abbreviation} ${it.getRecordDisplay()}" } ?: "待定"
+        
+        val label = JLabel(displayText).apply {
             horizontalAlignment = SwingConstants.CENTER
-            font = font.deriveFont(Font.BOLD, 14f)
+            font = font.deriveFont(Font.BOLD, 12f)
             foreground = JBColor(0x333333, 0xFFFFFF)
         }
         panel.add(label, BorderLayout.CENTER)
         
-        return panel
-    }
-    
-    /**
-     * 创建单列对阵
-     */
-    private fun createRoundColumn(title: String, seeds: List<String>): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.isOpaque = false
-        
-        // 标题
-        panel.add(JLabel(title).apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0x666666, 0x999999)
-        })
-        panel.add(Box.createVerticalStrut(5))
-        
-        // 根据种子数量创建对阵
-        when (seeds.size) {
-            8 -> {
-                // 首轮：4组对决
-                for (i in 0 until 8 step 2) {
-                    panel.add(createMatchupCard(seeds[i], seeds[i + 1]))
-                    if (i < 6) panel.add(Box.createVerticalStrut(8))
-                }
+        // 添加种子排名标签
+        team?.let {
+            val seedLabel = JLabel("#${it.conferenceRank}").apply {
+                font = font.deriveFont(Font.BOLD, 9f)
+                foreground = JBColor(0x666666, 0xAAAAAA)
+                border = EmptyBorder(2, 5, 0, 0)
             }
-            2 -> {
-                // 半决赛：2组对决
-                panel.add(Box.createVerticalStrut(40))
-                panel.add(createMatchupCard("", ""))
-                panel.add(Box.createVerticalStrut(60))
-                panel.add(createMatchupCard("", ""))
-            }
-            1 -> {
-                // 决赛：1组对决
-                panel.add(Box.createVerticalStrut(80))
-                panel.add(createMatchupCard("", ""))
-            }
+            panel.add(seedLabel, BorderLayout.NORTH)
         }
         
         return panel
     }
     
     /**
-     * 创建对阵卡片
+     * 创建占位卡片
      */
-    private fun createMatchupCard(seed1: String, seed2: String): JPanel {
+    private fun createPlaceholderCard(text: String): JPanel {
+        val panel = JPanel()
+        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
+        panel.background = JBColor(0xFFFFFF, 0x2D2D2D)
+        panel.border = LineBorder(JBColor(0xE0E0E0, 0x444444), 1, true)
+        panel.preferredSize = Dimension(90, 50)
+        panel.maximumSize = Dimension(90, 50)
+        
+        panel.add(Box.createVerticalStrut(15))
+        
+        val label = JLabel(text.ifEmpty { "待确定" }).apply {
+            font = font.deriveFont(Font.PLAIN, 10f)
+            alignmentX = Component.CENTER_ALIGNMENT
+            foreground = JBColor(0x999999, 0x666666)
+        }
+        panel.add(label)
+        
+        return panel
+    }
+    
+    /**
+     * 创建对阵卡片 - 使用真实球队数据
+     */
+    private fun createMatchupCard(team1: TeamStanding?, team2: TeamStanding?): JPanel {
         val panel = JPanel()
         panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
         panel.background = JBColor(0xFFFFFF, 0x2D2D2D)
@@ -226,28 +369,29 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         panel.maximumSize = Dimension(90, 56)
         
         // 上位球队
-        panel.add(createTeamRow(seed1, isHigher = true))
+        panel.add(createTeamRow(team1, isHigher = true))
         // 分隔线
         panel.add(JSeparator().apply {
             background = JBColor(0xE0E0E0, 0x444444)
             maximumSize = Dimension(90, 1)
         })
         // 下位球队
-        panel.add(createTeamRow(seed2, isHigher = false))
+        panel.add(createTeamRow(team2, isHigher = false))
         
         return panel
     }
     
     /**
-     * 创建球队行
+     * 创建球队行 - 使用真实数据
      */
-    private fun createTeamRow(seed: String, isHigher: Boolean): JPanel {
+    private fun createTeamRow(team: TeamStanding?, isHigher: Boolean): JPanel {
         val panel = JPanel(BorderLayout())
         panel.isOpaque = false
         panel.preferredSize = Dimension(90, 27)
         
         // 种子/排名
-        val seedLabel = JLabel(if (seed.isNotEmpty()) "#$seed" else "").apply {
+        val rankText = team?.let { "#${it.conferenceRank}" } ?: ""
+        val seedLabel = JLabel(rankText).apply {
             font = font.deriveFont(Font.BOLD, 10f)
             foreground = if (isHigher) JBColor(0x4CAF50, 0x4CAF50) else JBColor(0x666666, 0x999999)
             border = EmptyBorder(0, 5, 0, 0)
@@ -255,9 +399,12 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         panel.add(seedLabel, BorderLayout.WEST)
         
         // 队名
-        val teamLabel = JLabel(teamNameMap[seed] ?: "").apply {
-            font = font.deriveFont(Font.PLAIN, 11f)
+        val teamName = team?.abbreviation ?: ""
+        val record = team?.getRecordDisplay() ?: ""
+        val teamLabel = JLabel(if (teamName.isNotEmpty()) "$teamName $record" else "").apply {
+            font = font.deriveFont(Font.PLAIN, 9f)
             horizontalAlignment = SwingConstants.CENTER
+            foreground = JBColor(0x333333, 0xE0E0E0)
         }
         panel.add(teamLabel, BorderLayout.CENTER)
         
@@ -265,13 +412,16 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
     }
     
     /**
-     * 更新季后赛数据
+     * 更新季后赛数据 - 核心方法
      */
     fun updatePlayoffData(easternTeams: List<TeamStanding>, westernTeams: List<TeamStanding>) {
-        this.easternTeams = easternTeams.filter { it.conferenceRank in 1..8 }.sortedBy { it.conferenceRank }
-        this.westernTeams = westernTeams.filter { it.conferenceRank in 1..8 }.sortedBy { it.conferenceRank }
+        this.easternTeams = easternTeams
+        this.westernTeams = westernTeams
         
-        // 刷新界面
+        // 重新创建并更新各列
+        removeAll()
+        setupUI()
+        
         revalidate()
         repaint()
     }
