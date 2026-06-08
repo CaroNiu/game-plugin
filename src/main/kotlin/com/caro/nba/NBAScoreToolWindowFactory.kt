@@ -7,6 +7,7 @@ import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.components.JBTabbedPane
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.SwingUtilities
 
 /**
  * NBA 比分工具窗口工厂
