@@ -38,6 +38,7 @@ class NBADataService {
     
     /**
      * 获取指定日期的比赛数据
+     * @param date 应已为美国东部时间
      */
     fun getGames(date: LocalDate = LocalDate.now()): Result<NBAScoreboard> {
         return try {

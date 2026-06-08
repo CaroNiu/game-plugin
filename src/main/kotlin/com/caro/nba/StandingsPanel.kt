@@ -23,25 +23,36 @@ class StandingsPanel(
     private val project: Project,
     private val onPlayoffClick: (() -> Unit)? = null
 ) : JPanel(BorderLayout()) {
-    
+
     private val service = StandingsService()
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    
+
     // UI 组件
     private val refreshButton = JButton("刷新")
     private val standingsButton = JButton("排名")
     private val playoffButton = JButton("季后赛")
-    private val statusLabel = JLabel("加载中...")
-    
+    private val statusLabel = JLabel("准备就绪")
+
     private val contentPanel = JPanel(CardLayout())
     private val standingsPanel = JPanel()
     private val playoffPanel = PlayoffBracketPanel()
-    
+
     private var currentStandings: NBAStandings? = null
-    
+    private var dataLoaded = false
+
     init {
         setupUI()
-        loadStandings()
+        // 不立即加载数据，等待面板首次显示
+    }
+
+    /**
+     * 当面板首次显示时加载数据
+     */
+    fun loadDataIfNeeded() {
+        if (!dataLoaded) {
+            dataLoaded = true
+            loadStandings()
+        }
     }
     
     private fun setupUI() {

@@ -11,6 +11,8 @@ import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import java.awt.*
 import java.time.LocalDate
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.*
 import javax.swing.*
@@ -19,18 +21,18 @@ import javax.swing.*
  * NBA 比分面板 - 主 UI（包含比分和排名Tab）
  */
 class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
-    
+
     private val service = NBADataService()
     private var refreshJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    
-    // 当前选择的日期
+
+    // 当前选择的日期（用户本地时区显示，但API查询时转换为美东时间）
     private var selectedDate = LocalDate.now()
-    
+
     // 子面板
     private val gamesPanel = JPanel()
     private var standingsPanel: StandingsPanel? = null
-    
+
     // UI 组件
     private val dateLabel = JLabel()
     private val prevDayButton = JButton("◀")
@@ -39,15 +41,36 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     private val datePickerButton = JButton("📅")
     private val refreshButton = JButton("刷新")
     private val autoRefreshCheckBox = JCheckBox("自动刷新", false)
-    private val statusLabel = JLabel("加载中...")
-    
+    private val statusLabel = JLabel("准备就绪")
+
     // Tab 容器
     private val tabbedPane = JTabbedPane()
-    
+
+    // 防止重复初始化
+    private var isDataLoaded = false
+
     init {
         setupUI()
-        loadGames()
-        setupAutoRefresh()
+        // 延迟加载数据，避免插件打开时卡顿
+        SwingUtilities.invokeLater {
+            loadGames()
+            setupAutoRefresh()
+        }
+    }
+
+    companion object {
+        /**
+         * 将本地日期转换为美国东部时间的日期（用于API查询）
+         */
+        fun toEasternDate(localDate: LocalDate): LocalDate {
+            val easternZone = ZoneId.of("America/New_York")
+            val localZone = ZoneId.systemDefault()
+
+            // 在本地时区的开始时间
+            val localDateTime = localDate.atStartOfDay(localZone)
+            // 转换为美东时间
+            return localDateTime.withZoneSameInstant(easternZone).toLocalDate()
+        }
     }
     
     private fun setupUI() {
@@ -82,7 +105,7 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         // 设置按钮事件
         prevDayButton.addActionListener { changeDate(-1) }
         nextDayButton.addActionListener { changeDate(1) }
-        todayButton.addActionListener { 
+        todayButton.addActionListener {
             selectedDate = LocalDate.now()
             updateDateLabel()
             loadGames()
@@ -122,15 +145,15 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
      * 更新日期标签显示
      */
     private fun updateDateLabel() {
-        val today = LocalDate.now()
+        val todayLocal = LocalDate.now()
         val formatter = DateTimeFormatter.ofPattern("MM月dd日 EEEE", Locale.CHINA)
         val dateStr = selectedDate.format(formatter)
-        
-        dateLabel.text = if (selectedDate == today) {
+
+        dateLabel.text = if (selectedDate == todayLocal) {
             "今天 ($dateStr)"
-        } else if (selectedDate == today.minusDays(1) ) {
+        } else if (selectedDate == todayLocal.minusDays(1)) {
             "昨天 ($dateStr)"
-        } else if (selectedDate == today.plusDays(1)) {
+        } else if (selectedDate == todayLocal.plusDays(1)) {
             "明天 ($dateStr)"
         } else {
             dateStr
@@ -160,7 +183,7 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
             null,
             selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
         ) as? String
-        
+
         if (input != null) {
             try {
                 val newDate = LocalDate.parse(input, DateTimeFormatter.ISO_LOCAL_DATE)
@@ -179,10 +202,12 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun loadGames() {
         statusLabel.text = "加载中..."
         refreshButton.isEnabled = false
-        
+
         scope.launch {
-            val result = service.getGames(selectedDate)
-            
+            // 将用户选择的本地日期转换为美东日期进行API查询
+            val queryDate = toEasternDate(selectedDate)
+            val result = service.getGames(queryDate)
+
             ApplicationManager.getApplication().invokeLater {
                 refreshButton.isEnabled = true
                 result.fold(
