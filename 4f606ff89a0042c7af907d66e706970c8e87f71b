@@ -1,0 +1,31 @@
+CLAUDE.md
+  72af63b02e4d5f21 1-134
+src/main/kotlin/com/caro/nba/StandingsPanel.kt
+  72af63b02e4d5f21 34,41,45-46,48-55
+src/main/kotlin/com/caro/nba/NBAScorePanel.kt
+  72af63b02e4d5f21 14-15,29,44,49-50,54-59,61-67,69-73,108,148,152,154,156,207-209
+src/main/kotlin/com/caro/nba/service/NBADataService.kt
+  72af63b02e4d5f21 41
+src/main/kotlin/com/caro/nba/NBAScoreToolWindowFactory.kt
+  72af63b02e4d5f21 29,33-36,40-42,44-45,47-48,50-54,62-67,69-72,75-81,83-93,96-98,102-107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "4f606ff89a0042c7af907d66e706970c8e87f71b",
+  "prompts": {
+    "72af63b02e4d5f21": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e6ef71f5-0dfa-4b08-97db-91f41f1e0bb1",
+        "model": "doubao-seed-2.0-code"
+      },
+      "human_author": "JMS\\caro.niu",
+      "messages": [],
+      "total_additions": 1277,
+      "total_deletions": 1064,
+      "accepted_lines": 1064,
+      "overriden_lines": 0
+    }
+  }
+}
