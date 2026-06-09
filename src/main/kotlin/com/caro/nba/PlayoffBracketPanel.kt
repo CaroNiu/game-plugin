@@ -1,428 +1,475 @@
 package com.caro.nba
 
-import com.caro.nba.model.TeamStanding
+import com.caro.nba.model.PlayoffBracketResponse
+import com.caro.nba.model.PlayoffBracketSeries
+import com.caro.nba.service.PlayoffService
+import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.JBColor
-import com.intellij.util.ui.JBUI
+import kotlinx.coroutines.*
 import java.awt.*
+import java.awt.Image
+import java.net.URL
+import javax.imageio.ImageIO
 import javax.swing.*
 import javax.swing.border.EmptyBorder
-import javax.swing.border.LineBorder
 
 /**
- * 季后赛对阵图面板 - 真实数据版本
- * 显示东西部季后赛对阵：附加赛 → 首轮 → 半决赛 → 分区决赛 → 总决赛
+ * 季后赛对阵图 - 晋级树版本
  */
 class PlayoffBracketPanel : JPanel(BorderLayout()) {
-    
-    private var easternTeams = listOf<TeamStanding>()
-    private var westernTeams = listOf<TeamStanding>()
-    
-    // 存储各轮次的对阵面板引用，用于数据更新
-    private var easternFirstRound: JPanel? = null
-    private var easternSemiFinal: JPanel? = null
-    private var easternFinal: JPanel? = null
-    private var westernFirstRound: JPanel? = null
-    private var westernSemiFinal: JPanel? = null
-    private var westernFinal: JPanel? = null
-    private var easternPlayIn: JPanel? = null
-    private var westernPlayIn: JPanel? = null
-    
-    // 总决赛球队
-    private var easternChampion: JPanel? = null
-    private var westernChampion: JPanel? = null
-    private var finalsWinner: JPanel? = null
-    
-    private val teamColors = mapOf(
-        "DET" to Color(0xC8102E), "BOS" to Color(0x007A33), "NY" to Color(0x006BB6), "CLE" to Color(0x860038),
-        "TOR" to Color(0xCE1141), "ORL" to Color(0x0077C0), "MIA" to Color(0x98002E), "PHI" to Color(0x006BB6),
-        "ATL" to Color(0xE03A3E), "CHA" to Color(0x1D1160), "MIL" to Color(0x00471B), "CHI" to Color(0xCE1141),
-        "BKN" to Color(0x000000), "WSH" to Color(0x002B5C), "IND" to Color(0x002D62),
-        "OKC" to Color(0x007AC1), "SAS" to Color(0xC4CED4), "MIN" to Color(0x0C2340), "HOU" to Color(0xCE1141),
-        "LAL" to Color(0x552583), "DEN" to Color(0x0E2240), "PHX" to Color(0x1D1160), "GS" to Color(0x1D428A),
-        "LAC" to Color(0xC8102E), "POR" to Color(0xE03A3E), "MEM" to Color(0x5D76A9),
-        "DAL" to Color(0x00538C), "NO" to Color(0x0C2340), "UTAH" to Color(0x002B5C), "SAC" to Color(0x5A2D81)
-    )
-    
-    private val teamNameMap = mapOf(
-        "DET" to "活塞", "BOS" to "凯尔特人", "NY" to "尼克斯", "CLE" to "骑士",
-        "TOR" to "猛龙", "ORL" to "魔术", "MIA" to "热火", "PHI" to "76人",
-        "ATL" to "老鹰", "CHA" to "黄蜂", "MIL" to "雄鹿", "CHI" to "公牛",
-        "BKN" to "篮网", "WSH" to "奇才", "IND" to "步行者",
-        "OKC" to "雷霆", "SAS" to "马刺", "MIN" to "森林狼", "HOU" to "火箭",
-        "LAL" to "湖人", "DEN" to "掘金", "PHX" to "太阳", "GS" to "勇士",
-        "LAC" to "快船", "POR" to "开拓者", "MEM" to "灰熊",
-        "DAL" to "独行侠", "NO" to "鹈鹕", "UTAH" to "爵士", "SAC" to "国王"
-    )
-    
+
+    private val service = PlayoffService()
+    private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val bracketPanel = BracketDrawPanel()
+
+    private var bracketData: PlayoffBracketResponse? = null
+    private var errorMessage: String? = null
+    private val logoCache = mutableMapOf<String, Image>()
+
     init {
         setupUI()
+        loadData()
     }
-    
+
     private fun setupUI() {
-        background = JBColor(0xF5F5F5, 0x1E1E1E)
-        border = JBUI.Borders.empty(15)
-        
-        val mainPanel = JPanel(GridLayout(1, 3, 20, 0))
-        mainPanel.isOpaque = false
-        
-        // 东部对阵图（正常顺序）
-        mainPanel.add(createConferenceBracket("🏀 东部", reverse = false, isEastern = true))
-        
-        // 总决赛区域
-        mainPanel.add(createFinalsPanel())
-        
-        // 西部对阵图（反转顺序，使决赛朝向总决赛）
-        mainPanel.add(createConferenceBracket("🏀 西部", reverse = true, isEastern = false))
-        
-        add(mainPanel, BorderLayout.CENTER)
-        
-        // 顶部标题
-        val titleLabel = JPanel(FlowLayout(FlowLayout.CENTER)).apply {
-            isOpaque = false
-            add(JLabel("NBA 季后赛对阵图").apply {
-                font = font.deriveFont(Font.BOLD, 20f)
-                foreground = JBColor(0x1a1a1a, 0xE0E0E0)
+        background = JBColor.background()
+        border = EmptyBorder(16, 16, 16, 16)
+
+        val titlePanel = JPanel(FlowLayout(FlowLayout.CENTER)).apply {
+            background = JBColor.background()
+            add(JLabel("🏆 NBA 季后赛对阵图").apply {
+                font = font.deriveFont(Font.BOLD, 22f)
+                foreground = JBColor(0xC90C2E, 0xE03A3E)
             })
         }
-        add(titleLabel, BorderLayout.NORTH)
-        
-        preferredSize = Dimension(1100, 550)
-    }
-    
-    /**
-     * 创建分区对阵图
-     */
-    private fun createConferenceBracket(title: String, reverse: Boolean = false, isEastern: Boolean): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.isOpaque = false
-        
-        // 标题
-        val titleLabel = JLabel(title).apply {
-            font = font.deriveFont(Font.BOLD, 16f)
-            horizontalAlignment = SwingConstants.CENTER
-            border = EmptyBorder(5, 0, 10, 0)
-            foreground = JBColor(0x333333, 0xCCCCCC)
+
+        val scrollPane = JScrollPane(bracketPanel).apply {
+            border = null
+            viewport.background = JBColor.background()
+            verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_AS_NEEDED
+            horizontalScrollBar.unitIncrement = 16
+            verticalScrollBar.unitIncrement = 16
         }
-        panel.add(titleLabel, BorderLayout.NORTH)
-        
-        // 对阵区域
-        val bracketPanel = JPanel()
-        bracketPanel.layout = BoxLayout(bracketPanel, BoxLayout.X_AXIS)
-        bracketPanel.isOpaque = false
-        
-        // 附加赛（7-10名）
-        val playIn = createPlayInColumn(if (isEastern) easternTeams else westernTeams)
-        if (isEastern) easternPlayIn = playIn else westernPlayIn = playIn
-        
-        // 首轮
-        val firstRound = createFirstRoundColumn(if (isEastern) easternTeams else westernTeams)
-        if (isEastern) easternFirstRound = firstRound else westernFirstRound = firstRound
-        
-        // 半决赛
-        val semiFinal = createSemiFinalColumn()
-        if (isEastern) easternSemiFinal = semiFinal else westernSemiFinal = semiFinal
-        
-        // 决赛
-        val conferenceFinal = createConferenceFinalColumn()
-        if (isEastern) easternFinal = conferenceFinal else westernFinal = conferenceFinal
-        
-        // 根据是否反转决定列顺序
-        if (reverse) {
-            bracketPanel.add(conferenceFinal)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(semiFinal)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(firstRound)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(playIn)
-        } else {
-            bracketPanel.add(playIn)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(firstRound)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(semiFinal)
-            bracketPanel.add(Box.createHorizontalStrut(5))
-            bracketPanel.add(conferenceFinal)
-        }
-        
-        panel.add(bracketPanel, BorderLayout.CENTER)
-        return panel
+
+        add(titlePanel, BorderLayout.NORTH)
+        add(scrollPane, BorderLayout.CENTER)
+        preferredSize = Dimension(1120, 760)
     }
-    
-    /**
-     * 创建附加赛列
-     */
-    private fun createPlayInColumn(teams: List<TeamStanding>): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.isOpaque = false
-        
-        // 标题
-        panel.add(JLabel("附加赛").apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0xFF9800, 0xFF9800)
-        })
-        panel.add(Box.createVerticalStrut(5))
-        
-        // 附加赛对阵：7vs8，9vs10
-        val playInTeams = teams.filter { it.conferenceRank in 7..10 }.sortedBy { it.conferenceRank }
-        
-        if (playInTeams.size >= 4) {
-            // 第7 vs 第8
-            panel.add(createMatchupCard(playInTeams[0], playInTeams[1]))
-            panel.add(Box.createVerticalStrut(15))
-            // 第9 vs 第10
-            panel.add(createMatchupCard(playInTeams[2], playInTeams[3]))
-        } else if (playInTeams.size >= 2) {
-            panel.add(createMatchupCard(playInTeams[0], playInTeams[1]))
-        } else {
-            // 占位
-            panel.add(createPlaceholderCard("待确定"))
-        }
-        
-        return panel
-    }
-    
-    /**
-     * 创建首轮列
-     */
-    private fun createFirstRoundColumn(teams: List<TeamStanding>): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.isOpaque = false
-        
-        panel.add(JLabel("首轮").apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0x666666, 0x999999)
-        })
-        panel.add(Box.createVerticalStrut(5))
-        
-        // 获取排名前8的球队
-        val playoffTeams = teams.filter { it.conferenceRank in 1..8 }.sortedBy { it.conferenceRank }
-        
-        if (playoffTeams.size >= 8) {
-            // 4组首轮对决
-            for (i in 0 until 8 step 2) {
-                panel.add(createMatchupCard(playoffTeams[i], playoffTeams[i + 1]))
-                if (i < 6) panel.add(Box.createVerticalStrut(8))
+
+    private fun loadData() {
+        scope.launch {
+            val result = service.getPlayoffBracket()
+            result.getOrNull()?.let { preloadLogos(it) }
+            ApplicationManager.getApplication().invokeLater {
+                result.fold(
+                    onSuccess = { data ->
+                        bracketData = data
+                        errorMessage = null
+                        bracketPanel.revalidate()
+                        bracketPanel.repaint()
+                    },
+                    onFailure = { error ->
+                        errorMessage = error.message ?: "加载失败"
+                        bracketPanel.repaint()
+                    }
+                )
             }
-        } else {
-            // 静态占位
-            panel.add(createPlaceholderCard("等待确定"))
         }
-        
-        return panel
     }
-    
-    /**
-     * 创建半决赛列
-     */
-    private fun createSemiFinalColumn(): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.isOpaque = false
-        
-        panel.add(JLabel("半决赛").apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0x666666, 0x999999)
-        })
-        panel.add(Box.createVerticalStrut(40))
-        
-        panel.add(createPlaceholderCard(""))
-        panel.add(Box.createVerticalStrut(60))
-        panel.add(createPlaceholderCard(""))
-        
-        return panel
-    }
-    
-    /**
-     * 创建分区决赛列
-     */
-    private fun createConferenceFinalColumn(): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.isOpaque = false
-        
-        panel.add(JLabel("决赛").apply {
-            font = font.deriveFont(Font.BOLD, 11f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0xFFD700, 0xFFD700)
-        })
-        panel.add(Box.createVerticalStrut(80))
-        
-        panel.add(createPlaceholderCard(""))
-        
-        return panel
-    }
-    
-    /**
-     * 创建总决赛区域
-     */
-    private fun createFinalsPanel(): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.isOpaque = false
-        border = EmptyBorder(30, 10, 10, 10)
-        
-        // 标题
-        val titleLabel = JLabel("🏆 总决赛").apply {
-            font = font.deriveFont(Font.BOLD, 16f)
-            horizontalAlignment = SwingConstants.CENTER
-            foreground = JBColor(0xFFD700, 0xFFD700)
-        }
-        panel.add(titleLabel, BorderLayout.NORTH)
-        
-        // 冠军卡片
-        val championPanel = JPanel()
-        championPanel.layout = BoxLayout(championPanel, BoxLayout.Y_AXIS)
-        championPanel.isOpaque = false
-        
-        // 西部冠军
-        val westCard = createChampionCard("西部冠军", null)
-        westernChampion = westCard
-        championPanel.add(westCard)
-        
-        championPanel.add(Box.createVerticalStrut(60))
-        
-        // 总冠军
-        val winnerCard = createChampionCard("总冠军", null)
-        finalsWinner = winnerCard
-        championPanel.add(winnerCard)
-        
-        championPanel.add(Box.createVerticalStrut(60))
-        
-        // 东部冠军
-        val eastCard = createChampionCard("东部冠军", null)
-        easternChampion = eastCard
-        championPanel.add(eastCard)
-        
-        panel.add(championPanel, BorderLayout.CENTER)
-        return panel
-    }
-    
-    /**
-     * 创建冠军卡片
-     */
-    private fun createChampionCard(title: String, team: TeamStanding?): JPanel {
-        val panel = JPanel()
-        panel.layout = BorderLayout()
-        panel.preferredSize = Dimension(120, 50)
-        panel.background = JBColor(0xFFD700, 0x333333)
-        panel.border = LineBorder(JBColor(0xDAA520, 0x555555), 2, true)
-        
-        val displayText = team?.let { "${it.abbreviation} ${it.getRecordDisplay()}" } ?: "待定"
-        
-        val label = JLabel(displayText).apply {
-            horizontalAlignment = SwingConstants.CENTER
-            font = font.deriveFont(Font.BOLD, 12f)
-            foreground = JBColor(0x333333, 0xFFFFFF)
-        }
-        panel.add(label, BorderLayout.CENTER)
-        
-        // 添加种子排名标签
-        team?.let {
-            val seedLabel = JLabel("#${it.conferenceRank}").apply {
-                font = font.deriveFont(Font.BOLD, 9f)
-                foreground = JBColor(0x666666, 0xAAAAAA)
-                border = EmptyBorder(2, 5, 0, 0)
+
+    private fun preloadLogos(data: PlayoffBracketResponse) {
+        val urls = mutableSetOf<String>()
+        val allRounds = data.data.top + data.data.bottom + listOfNotNull(listOfNotNull(data.data.finals))
+        allRounds.flatten().forEach { series ->
+            series.teams.orEmpty().mapNotNullTo(urls) { it.img }
+            series.schedule?.list.orEmpty().forEach { game ->
+                game.left_logo?.let(urls::add)
+                game.right_logo?.let(urls::add)
             }
-            panel.add(seedLabel, BorderLayout.NORTH)
         }
-        
-        return panel
-    }
-    
-    /**
-     * 创建占位卡片
-     */
-    private fun createPlaceholderCard(text: String): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.background = JBColor(0xFFFFFF, 0x2D2D2D)
-        panel.border = LineBorder(JBColor(0xE0E0E0, 0x444444), 1, true)
-        panel.preferredSize = Dimension(90, 50)
-        panel.maximumSize = Dimension(90, 50)
-        
-        panel.add(Box.createVerticalStrut(15))
-        
-        val label = JLabel(text.ifEmpty { "待确定" }).apply {
-            font = font.deriveFont(Font.PLAIN, 10f)
-            alignmentX = Component.CENTER_ALIGNMENT
-            foreground = JBColor(0x999999, 0x666666)
+        urls.forEach { url ->
+            if (!logoCache.containsKey(url)) {
+                try {
+                    ImageIO.read(URL(url))?.let { image ->
+                        logoCache[url] = image.getScaledInstance(24, 24, Image.SCALE_SMOOTH)
+                    }
+                } catch (_: Exception) {
+                    // Logo 加载失败不影响对阵图展示
+                }
+            }
         }
-        panel.add(label)
-        
-        return panel
     }
-    
-    /**
-     * 创建对阵卡片 - 使用真实球队数据
-     */
-    private fun createMatchupCard(team1: TeamStanding?, team2: TeamStanding?): JPanel {
-        val panel = JPanel()
-        panel.layout = BoxLayout(panel, BoxLayout.Y_AXIS)
-        panel.background = JBColor(0xFFFFFF, 0x2D2D2D)
-        panel.border = LineBorder(JBColor(0xE0E0E0, 0x444444), 1, true)
-        panel.preferredSize = Dimension(90, 56)
-        panel.maximumSize = Dimension(90, 56)
-        
-        // 上位球队
-        panel.add(createTeamRow(team1, isHigher = true))
-        // 分隔线
-        panel.add(JSeparator().apply {
-            background = JBColor(0xE0E0E0, 0x444444)
-            maximumSize = Dimension(90, 1)
-        })
-        // 下位球队
-        panel.add(createTeamRow(team2, isHigher = false))
-        
-        return panel
-    }
-    
-    /**
-     * 创建球队行 - 使用真实数据
-     */
-    private fun createTeamRow(team: TeamStanding?, isHigher: Boolean): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.isOpaque = false
-        panel.preferredSize = Dimension(90, 27)
-        
-        // 种子/排名
-        val rankText = team?.let { "#${it.conferenceRank}" } ?: ""
-        val seedLabel = JLabel(rankText).apply {
-            font = font.deriveFont(Font.BOLD, 10f)
-            foreground = if (isHigher) JBColor(0x4CAF50, 0x4CAF50) else JBColor(0x666666, 0x999999)
-            border = EmptyBorder(0, 5, 0, 0)
+
+    private inner class BracketDrawPanel : JPanel() {
+
+        init {
+            background = JBColor.background()
         }
-        panel.add(seedLabel, BorderLayout.WEST)
-        
-        // 队名
-        val teamName = team?.abbreviation ?: ""
-        val record = team?.getRecordDisplay() ?: ""
-        val teamLabel = JLabel(if (teamName.isNotEmpty()) "$teamName $record" else "").apply {
-            font = font.deriveFont(Font.PLAIN, 9f)
-            horizontalAlignment = SwingConstants.CENTER
-            foreground = JBColor(0x333333, 0xE0E0E0)
+
+        override fun getPreferredSize(): Dimension = Dimension(1120, 760)
+
+        override fun paintComponent(g: Graphics) {
+            super.paintComponent(g)
+            val g2d = g as Graphics2D
+            g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            g2d.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON)
+
+            val data = bracketData?.data
+            if (data == null) {
+                drawCenteredText(g2d, errorMessage ?: "加载中...")
+                return
+            }
+
+            val centerX = width / 2
+            drawWatermark(g2d, centerX)
+
+            // top = 西部，bottom = 东部（接口结构和参考图一致）
+            drawConference(g2d, "西部", data.top, isTop = true)
+            drawConference(g2d, "东部", data.bottom, isTop = false)
+            drawFinals(g2d, data.finals, data.top.lastOrNull()?.firstOrNull(), data.bottom.lastOrNull()?.firstOrNull(), centerX)
         }
-        panel.add(teamLabel, BorderLayout.CENTER)
-        
-        return panel
+
+        private fun drawCenteredText(g2d: Graphics2D, text: String) {
+            g2d.color = JBColor.GRAY
+            g2d.font = g2d.font.deriveFont(Font.ITALIC, 16f)
+            val textWidth = g2d.fontMetrics.stringWidth(text)
+            g2d.drawString(text, (width - textWidth) / 2, height / 2)
+        }
+
+        private fun drawWatermark(g2d: Graphics2D, centerX: Int) {
+            g2d.color = JBColor(0xF2F2F2, 0x303030)
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 64f)
+            val trophy = "🏆"
+            val trophyWidth = g2d.fontMetrics.stringWidth(trophy)
+            g2d.drawString(trophy, centerX - trophyWidth / 2, height / 2 + 20)
+        }
+
+        private fun drawConference(
+            g2d: Graphics2D,
+            title: String,
+            rounds: List<List<PlayoffBracketSeries>>,
+            isTop: Boolean
+        ) {
+            if (rounds.isEmpty()) return
+
+            val centerX = width / 2
+            val titleY = if (isTop) 42 else height - 24
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 15f)
+            g2d.color = if (title == "西部") JBColor(0x007A33, 0x2D8F44) else JBColor(0xC90C2E, 0xE03A3E)
+            val titleText = "$title 联盟"
+            g2d.drawString(titleText, centerX - g2d.fontMetrics.stringWidth(titleText) / 2, titleY)
+
+            val firstRound = rounds.getOrNull(0).orEmpty()
+            val secondRound = rounds.getOrNull(1).orEmpty()
+            val conferenceFinal = rounds.getOrNull(2).orEmpty()
+
+            val y0 = if (isTop) 78 else height - 118
+            val direction = if (isTop) 1 else -1
+            val roundGapY = 92
+            val cardW = 150
+            val cardH = 76
+
+            val firstXs = listOf(90, 330, width - 480, width - 240)
+            val firstY = y0
+            firstRound.take(4).forEachIndexed { index, series ->
+                drawSeriesCard(g2d, series, firstXs[index], firstY, cardW, cardH)
+            }
+
+            val secondXs = listOf(210, width - 210 - cardW)
+            val secondY = y0 + direction * roundGapY
+            secondRound.take(2).forEachIndexed { index, series ->
+                drawSeriesCard(g2d, series, secondXs[index], secondY, cardW, cardH)
+            }
+
+            val finalX = centerX - cardW / 2
+            val finalY = y0 + direction * roundGapY * 2
+            conferenceFinal.firstOrNull()?.let { drawSeriesCard(g2d, it, finalX, finalY, cardW, cardH) }
+
+            // 连接线：首轮 -> 次轮
+            drawConnector(g2d, firstXs[0] + cardW / 2, firstY, secondXs[0] + cardW / 2, secondY, isTop)
+            drawConnector(g2d, firstXs[1] + cardW / 2, firstY, secondXs[0] + cardW / 2, secondY, isTop)
+            drawConnector(g2d, firstXs[2] + cardW / 2, firstY, secondXs[1] + cardW / 2, secondY, isTop)
+            drawConnector(g2d, firstXs[3] + cardW / 2, firstY, secondXs[1] + cardW / 2, secondY, isTop)
+
+            // 次轮 -> 分区决赛
+            drawConnector(g2d, secondXs[0] + cardW / 2, secondY, finalX + cardW / 2, finalY, isTop)
+            drawConnector(g2d, secondXs[1] + cardW / 2, secondY, finalX + cardW / 2, finalY, isTop)
+
+            // 分区决赛 -> 总决赛
+            val finalsY = height / 2 - 32
+            drawConnector(g2d, finalX + cardW / 2, finalY, centerX, finalsY, isTop)
+        }
+
+        private fun drawConnector(g2d: Graphics2D, fromX: Int, fromY: Int, toX: Int, toY: Int, isTop: Boolean) {
+            val cardHeight = 76
+            val fromEdgeY = if (isTop) fromY + cardHeight else fromY
+            val toEdgeY = if (isTop) toY else toY + cardHeight
+            val midY = (fromEdgeY + toEdgeY) / 2
+
+            g2d.color = JBColor(0x2D8CFF, 0x4A9EFF)
+            g2d.stroke = BasicStroke(2f)
+            g2d.drawLine(fromX, fromEdgeY, fromX, midY)
+            g2d.drawLine(fromX, midY, toX, midY)
+            g2d.drawLine(toX, midY, toX, toEdgeY)
+        }
+
+        private fun drawFinals(
+            g2d: Graphics2D,
+            finals: PlayoffBracketSeries?,
+            westFinal: PlayoffBracketSeries?,
+            eastFinal: PlayoffBracketSeries?,
+            centerX: Int
+        ) {
+            val cardW = 820
+            val cardH = 72
+            val x = centerX - cardW / 2
+            val y = height / 2 - cardH / 2
+
+            g2d.color = JBColor(0xEFFFF3, 0x253528)
+            g2d.fillRoundRect(x, y, cardW, cardH, 4, 4)
+            g2d.color = JBColor(0x18A84A, 0x28C45A)
+            g2d.stroke = BasicStroke(3f)
+            g2d.drawRoundRect(x, y, cardW, cardH, 4, 4)
+
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 16f)
+            g2d.color = JBColor.foreground()
+            val label = "决赛"
+            g2d.drawString(label, centerX - g2d.fontMetrics.stringWidth(label) / 2, y + cardH / 2 + 6)
+
+            if (finals != null) {
+                val westChampion = getSeriesWinnerName(westFinal)
+                val eastChampion = getSeriesWinnerName(eastFinal)
+                drawFinalsTeams(g2d, finals, westChampion, eastChampion, x, y, cardW, cardH)
+            }
+        }
+
+        private fun drawFinalsTeams(
+            g2d: Graphics2D,
+            finals: PlayoffBracketSeries,
+            westChampion: String?,
+            eastChampion: String?,
+            x: Int,
+            y: Int,
+            width: Int,
+            height: Int
+        ) {
+            val leftName = westChampion ?: resolveTeamName(finals.teams.orEmpty().getOrNull(0)?.name, finals, preferTop = true) ?: "待定"
+            val rightName = eastChampion ?: resolveTeamName(finals.teams.orEmpty().getOrNull(1)?.name, finals, preferTop = false) ?: "待定"
+            val score = calculateSeriesScoreForNames(finals, leftName, rightName)
+            val baseline = y + height / 2 + 6
+
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 15f)
+            g2d.color = JBColor.foreground()
+            g2d.drawString(leftName, x + 70, baseline)
+            g2d.drawString(rightName, x + width - 170, baseline)
+
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 20f)
+            val leftScore = score.first?.toString() ?: "0"
+            val rightScore = score.second?.toString() ?: "0"
+            g2d.drawString(leftScore, x + 170, baseline)
+            g2d.drawString(rightScore, x + width - 240, baseline)
+        }
+
+        private fun drawSeriesCard(
+            g2d: Graphics2D,
+            series: PlayoffBracketSeries,
+            x: Int,
+            y: Int,
+            width: Int,
+            height: Int
+        ) {
+            val team1 = series.teams.orEmpty().getOrNull(0)
+            val team2 = series.teams.orEmpty().getOrNull(1)
+            val seriesScore = calculateSeriesScore(series)
+            val score1 = seriesScore.first
+            val score2 = seriesScore.second
+            val team1Winner = score1 != null && score2 != null && score1 > score2 && score1 >= series.win_threshold
+            val team2Winner = score1 != null && score2 != null && score2 > score1 && score2 >= series.win_threshold
+
+            val team1Name = resolveTeamName(team1?.name, series, preferTop = true)
+            val team2Name = resolveTeamName(team2?.name, series, preferTop = false)
+            val leftX = x
+            val rightX = x + width - 56
+            val lineY = y + height - 14
+            val midX = x + width / 2
+
+            drawBracketTeam(g2d, team1Name, resolveLogo(team1?.img, team1Name, series), score1, team1Winner, leftX, y)
+            drawBracketTeam(g2d, team2Name, resolveLogo(team2?.img, team2Name, series), score2, team2Winner, rightX, y)
+
+            g2d.color = JBColor(0x2D8CFF, 0x4A9EFF)
+            g2d.stroke = BasicStroke(2f)
+            g2d.drawLine(leftX + 22, lineY, rightX + 22, lineY)
+            g2d.drawLine(midX, lineY, midX, lineY + 10)
+        }
+
+        private fun resolveLogo(logo: String?, teamName: String?, series: PlayoffBracketSeries): String? {
+            if (!logo.isNullOrBlank()) return logo
+            return series.schedule?.list.orEmpty().firstNotNullOfOrNull { game ->
+                when (teamName) {
+                    game.left_team -> game.left_logo
+                    game.right_team -> game.right_logo
+                    else -> null
+                }
+            }
+        }
+
+        private fun getLogo(logoUrl: String?): Image? {
+            if (logoUrl.isNullOrBlank()) return null
+            return logoCache[logoUrl]
+        }
+
+        private fun drawBracketTeam(
+            g2d: Graphics2D,
+            name: String?,
+            logoUrl: String?,
+            score: Int?,
+            isWinner: Boolean,
+            x: Int,
+            y: Int
+        ) {
+            val teamName = name?.takeIf { it.isNotBlank() } ?: "?"
+            getLogo(logoUrl)?.let { logo ->
+                g2d.drawImage(logo, x + 12, y, 24, 24, null)
+            }
+
+            g2d.font = g2d.font.deriveFont(Font.PLAIN, 10f)
+            g2d.color = if (isWinner) JBColor(0x007A33, 0x2D8F44) else JBColor.foreground()
+            val nameWidth = g2d.fontMetrics.stringWidth(teamName)
+            g2d.drawString(teamName, x + 24 - nameWidth / 2, y + 38)
+
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 13f)
+            val scoreText = score?.toString() ?: ""
+            val scoreWidth = g2d.fontMetrics.stringWidth(scoreText)
+            g2d.drawString(scoreText, x + 24 - scoreWidth / 2, y + 54)
+        }
+
+        private fun drawTeamLine(
+            g2d: Graphics2D,
+            rank: String?,
+            name: String?,
+            score: Int?,
+            isWinner: Boolean,
+            x: Int,
+            baseline: Int,
+            width: Int
+        ) {
+            val teamName = name?.takeIf { it.isNotBlank() } ?: "?"
+            val seed = rank?.takeIf { it.isNotBlank() }?.let { "#$it" } ?: ""
+
+            g2d.font = g2d.font.deriveFont(Font.BOLD, 11f)
+            g2d.color = if (isWinner) JBColor(0x007A33, 0x2D8F44) else JBColor.GRAY
+            g2d.drawString(seed, x + 8, baseline)
+
+            g2d.color = if (isWinner) JBColor(0x007A33, 0x2D8F44) else JBColor.foreground()
+            g2d.drawString(teamName, x + 34, baseline)
+
+            val scoreText = score?.toString() ?: ""
+            if (scoreText.isNotEmpty()) {
+                g2d.font = g2d.font.deriveFont(Font.BOLD, 13f)
+                val scoreWidth = g2d.fontMetrics.stringWidth(scoreText)
+                g2d.drawString(scoreText, x + width - scoreWidth - 10, baseline)
+            }
+        }
+
+        private fun getSeriesWinnerName(series: PlayoffBracketSeries?): String? {
+            if (series == null) return null
+            val team1 = resolveTeamName(series.teams.orEmpty().getOrNull(0)?.name, series, preferTop = true)
+            val team2 = resolveTeamName(series.teams.orEmpty().getOrNull(1)?.name, series, preferTop = false)
+            val score = calculateSeriesScore(series)
+            val score1 = score.first
+            val score2 = score.second
+            return when {
+                score1 != null && score2 != null && score1 > score2 -> team1
+                score1 != null && score2 != null && score2 > score1 -> team2
+                else -> null
+            }
+        }
+
+        private fun calculateSeriesScoreForNames(
+            series: PlayoffBracketSeries,
+            firstName: String,
+            secondName: String
+        ): Pair<Int?, Int?> {
+            var firstWins = 0
+            var secondWins = 0
+            series.schedule?.list.orEmpty().forEach { game ->
+                val gameScore = parseGameScore(game.score) ?: return@forEach
+                val winner = if (gameScore.first > gameScore.second) game.left_team else game.right_team
+                when (winner) {
+                    firstName -> firstWins++
+                    secondName -> secondWins++
+                }
+            }
+            if (firstWins == 0 && secondWins == 0) return null to null
+            return firstWins to secondWins
+        }
+
+        private fun calculateSeriesScore(series: PlayoffBracketSeries): Pair<Int?, Int?> {
+            val directScore1 = parseSeriesScore(series.info1)
+            val directScore2 = parseSeriesScore(series.info2)
+            if (directScore1 != null || directScore2 != null) {
+                return directScore1 to directScore2
+            }
+
+            val topName = resolveTeamName(series.teams.orEmpty().getOrNull(0)?.name, series, preferTop = true)
+            val bottomName = resolveTeamName(series.teams.orEmpty().getOrNull(1)?.name, series, preferTop = false)
+            if (topName.isNullOrBlank() || bottomName.isNullOrBlank()) {
+                return null to null
+            }
+
+            var topWins = 0
+            var bottomWins = 0
+            series.schedule?.list.orEmpty().forEach { game ->
+                val gameScore = parseGameScore(game.score) ?: return@forEach
+                val winner = if (gameScore.first > gameScore.second) game.left_team else game.right_team
+                when (winner) {
+                    topName -> topWins++
+                    bottomName -> bottomWins++
+                }
+            }
+
+            if (topWins == 0 && bottomWins == 0) return null to null
+            return topWins to bottomWins
+        }
+
+        private fun resolveTeamName(name: String?, series: PlayoffBracketSeries, preferTop: Boolean): String? {
+            if (!name.isNullOrBlank() && name != "?") return name
+
+            val calculated = linkedMapOf<String, Int>()
+            series.schedule?.list.orEmpty().forEach { game ->
+                game.left_team?.takeIf { it.isNotBlank() }?.let { calculated.putIfAbsent(it, 0) }
+                game.right_team?.takeIf { it.isNotBlank() }?.let { calculated.putIfAbsent(it, 0) }
+
+                val gameScore = parseGameScore(game.score) ?: return@forEach
+                val winner = if (gameScore.first > gameScore.second) game.left_team else game.right_team
+                if (!winner.isNullOrBlank()) {
+                    calculated[winner] = (calculated[winner] ?: 0) + 1
+                }
+            }
+
+            val sorted = calculated.entries.sortedByDescending { it.value }
+            return if (preferTop) sorted.getOrNull(0)?.key else sorted.getOrNull(1)?.key
+        }
+
+        private fun parseGameScore(value: String?): Pair<Int, Int>? {
+            val trimmed = value?.trim().orEmpty()
+            if (trimmed.isEmpty() || trimmed.equals("vs", ignoreCase = true)) return null
+            val scoreParts = trimmed.split("-")
+            if (scoreParts.size != 2) return null
+            val leftScore = scoreParts[0].toIntOrNull() ?: return null
+            val rightScore = scoreParts[1].toIntOrNull() ?: return null
+            return leftScore to rightScore
+        }
+
+        private fun parseSeriesScore(value: String?): Int? {
+            val trimmed = value?.trim().orEmpty()
+            if (trimmed.isEmpty() || trimmed == "-" || trimmed == "?") return null
+            return trimmed.toIntOrNull()
+        }
     }
-    
-    /**
-     * 更新季后赛数据 - 核心方法
-     */
-    fun updatePlayoffData(easternTeams: List<TeamStanding>, westernTeams: List<TeamStanding>) {
-        this.easternTeams = easternTeams
-        this.westernTeams = westernTeams
-        
-        // 重新创建并更新各列
-        removeAll()
-        setupUI()
-        
-        revalidate()
-        repaint()
+
+    fun dispose() {
+        scope.cancel()
     }
 }

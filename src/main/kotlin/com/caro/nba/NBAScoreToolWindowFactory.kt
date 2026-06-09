@@ -5,7 +5,6 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.content.ContentFactory
 import com.intellij.ui.components.JBTabbedPane
-import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
 
@@ -13,14 +12,14 @@ import javax.swing.SwingUtilities
  * NBA 比分工具窗口工厂
  */
 class NBAScoreToolWindowFactory : ToolWindowFactory {
-    
+
     override fun createToolWindowContent(project: Project, toolWindow: ToolWindow) {
         // 创建主面板（带标签页）
         val mainPanel = NBAScoreMainPanel(project)
         val content = ContentFactory.getInstance().createContent(mainPanel, "", false)
         toolWindow.contentManager.addContent(content)
     }
-    
+
     override fun init(toolWindow: ToolWindow) {
         toolWindow.setTitle("NBA Score")
     }
@@ -34,10 +33,10 @@ class NBAScoreMainPanel(project: Project) : JBTabbedPane() {
     // 懒加载面板
     private val scorePanel by lazy { NBAScorePanel(project) }
     private val standingsPanel by lazy {
-        StandingsPanel(project) {
+        StandingsPanel(project, onPlayoffClick = {
             // 点击季后赛按钮时切换到季后赛标签页
             selectedIndex = 2
-        }
+        })
     }
     private val playoffPanel by lazy { PlayoffBracketPanel() }
     private val aiPanel by lazy { AIAssistantPanel() }
@@ -88,7 +87,10 @@ class NBAScoreMainPanel(project: Project) : JBTabbedPane() {
                 setComponentAt(1, standingsPanel)
                 standingsPanel.loadDataIfNeeded()
             }
-            2 -> setComponentAt(2, playoffPanel)
+            2 -> {
+                setComponentAt(2, playoffPanel)
+                // PlayoffBracketPanel 内部自动加载数据
+            }
             3 -> setComponentAt(3, aiPanel)
         }
     }
@@ -102,6 +104,9 @@ class NBAScoreMainPanel(project: Project) : JBTabbedPane() {
     fun dispose() {
         if (initializedTabs[1]) {
             standingsPanel.dispose()
+        }
+        if (initializedTabs[2]) {
+            playoffPanel.dispose()
         }
         if (initializedTabs[3]) {
             aiPanel.dispose()

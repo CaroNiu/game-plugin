@@ -8,16 +8,15 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
-import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import java.awt.*
+import java.net.URL
+import javax.imageio.ImageIO
 import javax.swing.*
 import javax.swing.border.EmptyBorder
-import javax.swing.table.DefaultTableCellRenderer
-import javax.swing.table.DefaultTableModel
 
 /**
- * NBA 排名面板 - 东西部排名展示 + 季后赛对阵图
+ * NBA 排名面板 - 重新设计的整洁版本
  */
 class StandingsPanel(
     private val project: Project,
@@ -29,20 +28,21 @@ class StandingsPanel(
 
     // UI 组件
     private val refreshButton = JButton("刷新")
-    private val standingsButton = JButton("排名")
     private val playoffButton = JButton("季后赛")
     private val statusLabel = JLabel("准备就绪")
 
-    private val contentPanel = JPanel(CardLayout())
-    private val standingsPanel = JPanel()
-    private val playoffPanel = PlayoffBracketPanel()
+    // 标签页切换
+    private val tabbedPane = JTabbedPane(JTabbedPane.TOP)
 
-    private var currentStandings: NBAStandings? = null
+    // Logo 缓存
+    private val logoCache = mutableMapOf<String, ImageIcon>()
+
+    var currentStandings: NBAStandings? = null
+        private set
     private var dataLoaded = false
 
     init {
         setupUI()
-        // 不立即加载数据，等待面板首次显示
     }
 
     /**
@@ -54,87 +54,73 @@ class StandingsPanel(
             loadStandings()
         }
     }
-    
+
     private fun setupUI() {
-        // 顶部工具栏
-        val toolBar = JPanel(FlowLayout(FlowLayout.LEFT, 10, 5))
-        toolBar.add(refreshButton)
-        toolBar.add(Box.createHorizontalStrut(20))
-        toolBar.add(standingsButton)
-        toolBar.add(playoffButton)
-        toolBar.add(Box.createHorizontalStrut(20))
-        toolBar.add(statusLabel)
-        
+        background = JBColor.background()
+
+        // 顶部工具栏 - 使用 BorderLayout 替代 FlowLayout 以获得更好的间距控制
+        val toolBar = JPanel(BorderLayout()).apply {
+            background = JBColor.background()
+            border = EmptyBorder(10, 12, 10, 12)
+            preferredSize = Dimension(Int.MAX_VALUE, 55)
+        }
+
+        // 左侧按钮面板
+        val buttonPanel = JPanel(FlowLayout(FlowLayout.LEFT, 12, 0)).apply {
+            background = JBColor.background()
+            isOpaque = false
+
+            // 设置按钮尺寸
+            refreshButton.preferredSize = Dimension(100, 32)
+            playoffButton.preferredSize = Dimension(100, 32)
+
+            add(refreshButton)
+            add(Box.createHorizontalStrut(15))
+            add(playoffButton)
+        }
+
+        // 右侧状态标签
+        val statusPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 0, 0)).apply {
+            background = JBColor.background()
+            isOpaque = false
+            add(statusLabel)
+        }
+
+        toolBar.add(buttonPanel, BorderLayout.WEST)
+        toolBar.add(statusPanel, BorderLayout.EAST)
+
         refreshButton.addActionListener { loadStandings() }
-        standingsButton.addActionListener { showStandings() }
-        playoffButton.addActionListener { showPlayoff() }
-        
-        // 排名内容区域
-        standingsPanel.layout = BoxLayout(standingsPanel, BoxLayout.Y_AXIS)
-        standingsPanel.border = JBUI.Borders.empty(10)
-        
-        val scrollPane = JBScrollPane(standingsPanel)
-        scrollPane.preferredSize = Dimension(700, 500)
-        scrollPane.horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
-        
-        // 内容面板 - 卡片布局
-        contentPanel.add(scrollPane, "standings")
-        contentPanel.add(playoffPanel, "playoff")
-        
+        playoffButton.addActionListener { onPlayoffClick?.invoke() }
+
+        // 标签页 - 东西部分开
+        tabbedPane.apply {
+            font = font.deriveFont(Font.BOLD, 14f)
+            background = JBColor.background()
+            border = EmptyBorder(0, 0, 0, 0)
+        }
+
         add(toolBar, BorderLayout.NORTH)
-        add(contentPanel, BorderLayout.CENTER)
-        
-        preferredSize = Dimension(720, 550)
-        
-        // 默认显示排名
-        standingsButton.isEnabled = false
+        add(tabbedPane, BorderLayout.CENTER)
+
+        preferredSize = Dimension(800, 700)
     }
-    
-    /**
-     * 显示排名视图
-     */
-    private fun showStandings() {
-        (contentPanel.layout as CardLayout).show(contentPanel, "standings")
-        standingsButton.isEnabled = false
-        playoffButton.isEnabled = true
-    }
-    
-    /**
-     * 显示季后赛对阵图
-     */
-    private fun showPlayoff() {
-        // 如果有回调，调用回调切换标签页
-        onPlayoffClick?.invoke()
-        
-        // 更新季后赛数据
-        currentStandings?.let { standings ->
-            playoffPanel.updatePlayoffData(standings.eastern.teams, standings.western.teams)
-        }
-        
-        // 如果没有回调，使用原来的 CardLayout 切换
-        if (onPlayoffClick == null) {
-            (contentPanel.layout as CardLayout).show(contentPanel, "playoff")
-            playoffButton.isEnabled = false
-            standingsButton.isEnabled = true
-        }
-    }
-    
+
     /**
      * 加载排名数据
      */
     private fun loadStandings() {
         statusLabel.text = "加载中..."
         refreshButton.isEnabled = false
-        
+
         scope.launch {
             val result = service.getStandings()
-            
+
             ApplicationManager.getApplication().invokeLater {
                 refreshButton.isEnabled = true
                 result.fold(
                     onSuccess = { standings ->
                         currentStandings = standings
-                        updateStandingsPanel(standings)
+                        updateStandingsUI(standings)
                         statusLabel.text = "✅ 更新于 ${standings.lastUpdated}"
                     },
                     onFailure = { error ->
@@ -145,246 +131,288 @@ class StandingsPanel(
             }
         }
     }
-    
+
     /**
-     * 更新排名面板
+     * 更新排名UI - 创建东西部分区标签页
      */
-    private fun updateStandingsPanel(standings: NBAStandings) {
-        standingsPanel.removeAll()
-        
-        // 图例说明
-        addLegend()
-        
-        // 检查是否有数据
-        if (standings.eastern.teams.isEmpty() && standings.western.teams.isEmpty()) {
-            val noDataLabel = JLabel("⚠️ 暂无数据，请检查网络连接").apply {
-                alignmentX = Component.CENTER_ALIGNMENT
-                font = font.deriveFont(14f)
+    private fun updateStandingsUI(standings: NBAStandings) {
+        currentStandings = standings
+        tabbedPane.removeAll()
+
+        // 西部排名标签页
+        val westPanel = createConferenceStandingsPanel("西部", standings.western.teams)
+        tabbedPane.addTab("西部", westPanel)
+
+        // 东部排名标签页
+        val eastPanel = createConferenceStandingsPanel("东部", standings.eastern.teams)
+        tabbedPane.addTab("东部", eastPanel)
+    }
+
+    /**
+     * 创建单个分区的排名面板
+     */
+    private fun createConferenceStandingsPanel(
+        conferenceName: String,
+        teams: List<TeamStanding>
+    ): JComponent {
+        val panel = JPanel(BorderLayout()).apply {
+            background = JBColor.background()
+            border = EmptyBorder(15, 15, 15, 15)
+        }
+
+        // 主内容面板 - 使用 BoxLayout 垂直排列球队
+        val contentPanel = JPanel().apply {
+            layout = BoxLayout(this, BoxLayout.Y_AXIS)
+            background = JBColor.background()
+        }
+
+        // 季后赛区标签（前6名）
+        if (teams.any { it.conferenceRank in 1..6 }) {
+            contentPanel.add(createSectionLabel("季后赛区"))
+            val playoffTeams = teams.filter { it.conferenceRank in 1..6 }.sortedBy { it.conferenceRank }
+            playoffTeams.forEachIndexed { index, team ->
+                contentPanel.add(createTeamRow(team, showBackground = index % 2 == 0))
             }
-            standingsPanel.add(noDataLabel)
-            standingsPanel.revalidate()
-            standingsPanel.repaint()
+            contentPanel.add(Box.createVerticalStrut(10))
+        }
+
+        // 附加赛区标签（7-10名）
+        if (teams.any { it.conferenceRank in 7..10 }) {
+            contentPanel.add(createSectionLabel("附加赛区"))
+            val playInTeams = teams.filter { it.conferenceRank in 7..10 }.sortedBy { it.conferenceRank }
+            playInTeams.forEachIndexed { index, team ->
+                contentPanel.add(createTeamRow(team, showBackground = index % 2 == 0))
+            }
+            contentPanel.add(Box.createVerticalStrut(10))
+        }
+
+        // 淘汰区标签（11名以后）
+        val eliminatedTeams = teams.filter { it.conferenceRank >= 11 }.sortedBy { it.conferenceRank }
+        if (eliminatedTeams.isNotEmpty()) {
+            contentPanel.add(createSectionLabel(""))
+            eliminatedTeams.forEachIndexed { index, team ->
+                contentPanel.add(createTeamRow(team, showBackground = index % 2 == 0, isEliminated = true))
+            }
+        }
+
+        // 添加滚动
+        val scrollPane = JBScrollPane(contentPanel).apply {
+            border = null
+            viewport.background = JBColor.background()
+            verticalScrollBar.unitIncrement = 16
+            horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
+        }
+
+        panel.add(scrollPane, BorderLayout.CENTER)
+        return panel
+    }
+
+    /**
+     * 创建分区标签（季后赛区/附加赛区）
+     */
+    private fun createSectionLabel(text: String): JComponent {
+        return JPanel(BorderLayout()).apply {
+            background = JBColor.background()
+            border = EmptyBorder(12, 0, 6, 0)
+            maximumSize = Dimension(Int.MAX_VALUE, 42)
+
+            if (text.isNotEmpty()) {
+                val label = JLabel(text).apply {
+                    font = font.deriveFont(Font.BOLD, 13f)
+                    foreground = when (text) {
+                        "季后赛区" -> JBColor(0x007A33, 0x2D8F44)
+                        "附加赛区" -> JBColor(0xC90C2E, 0xE03A3E)
+                        else -> JBColor.GRAY
+                    }
+                    border = EmptyBorder(4, 12, 4, 0)
+                }
+                add(label, BorderLayout.WEST)
+
+                // 背景条
+                background = when (text) {
+                    "季后赛区" -> JBColor(0xE8F5E9, 0x1B3D1B)
+                    "附加赛区" -> JBColor(0xFFEBEE, 0x3D1B1B)
+                    else -> JBColor.background()
+                }
+            }
+        }
+    }
+
+    /**
+     * 创建球队行
+     */
+    private fun createTeamRow(
+        team: TeamStanding,
+        showBackground: Boolean,
+        isEliminated: Boolean = false
+    ): JComponent {
+        val rowPanel = JPanel(BorderLayout()).apply {
+            maximumSize = Dimension(Int.MAX_VALUE, 56)
+            preferredSize = Dimension(700, 56)
+            border = EmptyBorder(8, 12, 8, 12)
+
+            background = when {
+                showBackground -> JBColor(0xF8F9FA, 0x2D2D2D)
+                else -> JBColor.background()
+            }
+        }
+
+        // 左边：排名、Logo、队名
+        val leftPanel = JPanel(BorderLayout(8, 0)).apply {
+            isOpaque = false
+        }
+
+        // 排名徽章
+        val rankBadge = createRankBadge(team.conferenceRank, team.getRankStatus())
+        leftPanel.add(rankBadge, BorderLayout.WEST)
+
+        // 球队信息（Logo + 名称）
+        val teamInfoPanel = JPanel(BorderLayout(8, 0)).apply {
+            isOpaque = false
+        }
+
+        // Logo 标签
+        val logoLabel = JLabel().apply {
+            preferredSize = Dimension(32, 32)
+            horizontalAlignment = SwingConstants.CENTER
+            // 异步加载 logo
+            loadTeamLogo(team.logo, this)
+        }
+        teamInfoPanel.add(logoLabel, BorderLayout.WEST)
+
+        // 队名
+        val teamNameLabel = JLabel().apply {
+            val clincherMark = if (team.clincher.isNotEmpty()) " *" else ""
+            text = "${team.teamName}$clincherMark"
+            font = font.deriveFont(Font.BOLD, 13f)
+            foreground = if (isEliminated) JBColor.GRAY else JBColor.foreground()
+        }
+        teamInfoPanel.add(teamNameLabel, BorderLayout.CENTER)
+
+        leftPanel.add(teamInfoPanel, BorderLayout.CENTER)
+
+        // 右边：战绩和胜率
+        val rightPanel = JPanel(FlowLayout(FlowLayout.RIGHT, 15, 0)).apply {
+            isOpaque = false
+        }
+
+        // 胜负记录
+        val recordLabel = JLabel("${team.wins}/${team.losses}").apply {
+            font = font.deriveFont(Font.BOLD, 13f)
+            foreground = if (isEliminated) JBColor.GRAY else JBColor.foreground()
+        }
+
+        // 胜率
+        val winPercentLabel = JLabel(team.getWinPercentDisplay().removePrefix("0.")).apply {
+            font = font.deriveFont(13f)
+            foreground = JBColor.GRAY
+        }
+
+        rightPanel.add(recordLabel)
+        rightPanel.add(winPercentLabel)
+
+        rowPanel.add(leftPanel, BorderLayout.WEST)
+        rowPanel.add(rightPanel, BorderLayout.EAST)
+
+        return rowPanel
+    }
+
+    /**
+     * 创建排名徽章
+     */
+    private fun createRankBadge(rank: Int, status: RankStatus): JComponent {
+        val badgePanel = JPanel(BorderLayout()).apply {
+            preferredSize = Dimension(36, 36)
+            isOpaque = false
+        }
+
+        val badgeLabel = JLabel(rank.toString()).apply {
+            preferredSize = Dimension(36, 36)
+            minimumSize = Dimension(36, 36)
+            horizontalAlignment = SwingConstants.CENTER
+            verticalAlignment = SwingConstants.CENTER
+            font = font.deriveFont(Font.BOLD, 14f)
+
+            // 设置背景和前景色
+            foreground = Color.WHITE
+            background = when {
+                rank == 1 -> JBColor(0xE03A3E, 0xC90C2E)    // 红色 - 第1名
+                rank == 2 -> JBColor(0xF39C12, 0xE67E22)    // 橙色 - 第2名
+                rank == 3 -> JBColor(0xF1C40F, 0xF39C12)    // 黄色 - 第3名
+                status == RankStatus.PLAYOFF_CLINCHED -> JBColor(0x007A33, 0x2D8F44)
+                status == RankStatus.PLAY_IN -> JBColor(0xE67E22, 0xD35400)
+                else -> JBColor.GRAY
+            }
+            isOpaque = true
+            border = BorderFactory.createEmptyBorder(2, 2, 2, 2)
+        }
+
+        badgePanel.add(badgeLabel, BorderLayout.CENTER)
+        return badgePanel
+    }
+
+    /**
+     * 异步加载球队Logo
+     */
+    private fun loadTeamLogo(logoUrl: String, label: JLabel) {
+        if (logoUrl.isBlank()) {
+            // 显示默认占位符
+            label.text = teamAbbreviationToEmoji(label.parent?.parent?.name ?: "")
             return
         }
-        
-        // 东西部并排显示
-        val contentPanel = JPanel(GridLayout(1, 2, 20, 0))
-        contentPanel.isOpaque = false
-        
-        // 东部排名
-        if (standings.eastern.teams.isNotEmpty()) {
-            contentPanel.add(createConferencePanel("东部排名", standings.eastern.teams))
-        } else {
-            contentPanel.add(createEmptyPanel("东部排名"))
+
+        // 检查缓存
+        logoCache[logoUrl]?.let {
+            label.icon = it
+            label.text = ""
+            return
         }
-        
-        // 西部排名
-        if (standings.western.teams.isNotEmpty()) {
-            contentPanel.add(createConferencePanel("西部排名", standings.western.teams))
-        } else {
-            contentPanel.add(createEmptyPanel("西部排名"))
-        }
-        
-        standingsPanel.add(contentPanel)
-        standingsPanel.revalidate()
-        standingsPanel.repaint()
-    }
-    
-    /**
-     * 创建空面板（无数据时显示）
-     */
-    private fun createEmptyPanel(title: String): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.border = BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(JBColor.border()),
-            title
-        )
-        val label = JLabel("暂无数据").apply {
-            horizontalAlignment = SwingConstants.CENTER
-        }
-        panel.add(label, BorderLayout.CENTER)
-        panel.preferredSize = Dimension(340, 200)
-        return panel
-    }
-    
-    /**
-     * 添加图例说明
-     */
-    private fun addLegend() {
-        val legendPanel = JPanel(FlowLayout(FlowLayout.CENTER, 15, 5))
-        legendPanel.border = EmptyBorder(5, 0, 10, 0)
-        legendPanel.isOpaque = false
-        
-        legendPanel.add(createLegendItem("季后赛区", JBColor(0x4CAF50, 0x4CAF50)))
-        legendPanel.add(createLegendItem("附加赛区", JBColor(0xFF9800, 0xFF9800)))
-        legendPanel.add(createLegendItem("已淘汰", JBColor.GRAY))
-        
-        standingsPanel.add(legendPanel)
-    }
-    
-    private fun createLegendItem(text: String, color: Color): JPanel {
-        val panel = JPanel(FlowLayout(FlowLayout.LEFT, 5, 0))
-        panel.isOpaque = false
-        val dot = JLabel("●").apply {
-            foreground = color
-            font = font.deriveFont(Font.BOLD, 14f)
-        }
-        val label = JLabel(text).apply {
-            font = font.deriveFont(11f)
-        }
-        panel.add(dot)
-        panel.add(label)
-        return panel
-    }
-    
-    /**
-     * 创建分区排名面板
-     */
-    private fun createConferencePanel(title: String, teams: List<TeamStanding>): JPanel {
-        val panel = JPanel(BorderLayout())
-        panel.border = BorderFactory.createTitledBorder(
-            BorderFactory.createLineBorder(JBColor.border()),
-            title
-        )
-        
-        // 表格列：排名、球队、胜、负、胜率、落后、近10场、连胜
-        val columnNames = arrayOf("排名", "球队", "胜", "负", "胜率", "落后", "近10场", "连胜")
-        val model = object : DefaultTableModel(columnNames, 0) {
-            override fun isCellEditable(row: Int, column: Int) = false
-        }
-        
-        teams.forEach { team ->
-            model.addRow(arrayOf(
-                team.conferenceRank,
-                team.teamName,
-                team.wins,
-                team.losses,
-                team.getWinPercentDisplay(),
-                team.gamesBehind,
-                team.last10,
-                team.streak
-            ))
-        }
-        
-        val table = JTable(model).apply {
-            rowHeight = 28
-            font = font.deriveFont(12f)
-            setGridColor(JBColor.border())
-            tableHeader.reorderingAllowed = false
-            tableHeader.resizingAllowed = true
-            
-            // 设置列宽
-            columnModel.getColumn(0).preferredWidth = 35   // 排名
-            columnModel.getColumn(1).preferredWidth = 80   // 球队
-            columnModel.getColumn(2).preferredWidth = 40   // 胜
-            columnModel.getColumn(3).preferredWidth = 40   // 负
-            columnModel.getColumn(4).preferredWidth = 50   // 胜率
-            columnModel.getColumn(5).preferredWidth = 45   // 落后
-            columnModel.getColumn(6).preferredWidth = 55   // 近10场
-            columnModel.getColumn(7).preferredWidth = 50   // 连胜
-            
-            // 自定义行渲染器（颜色标识）
-            val centerRenderer = object : DefaultTableCellRenderer() {
-                override fun getTableCellRendererComponent(
-                    table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
-                ): Component {
-                    val comp = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column)
-                    horizontalAlignment = SwingConstants.CENTER
-                    
-                    // 根据排名状态设置背景色
-                    val team = teams.getOrNull(row)
-                    if (team != null && !isSelected) {
-                        background = getRowBackgroundColor(team)
+
+        // 异步加载
+        scope.launch(Dispatchers.IO) {
+            try {
+                val url = URL(logoUrl)
+                val image = ImageIO.read(url)
+                if (image != null) {
+                    val scaled = image.getScaledInstance(28, 28, Image.SCALE_SMOOTH)
+                    val icon = ImageIcon(scaled)
+                    logoCache[logoUrl] = icon
+
+                    ApplicationManager.getApplication().invokeLater {
+                        label.icon = icon
+                        label.text = ""
                     }
-                    
-                    return comp
                 }
-            }
-            
-            // 球队名称左对齐
-            val teamRenderer = object : DefaultTableCellRenderer() {
-                override fun getTableCellRendererComponent(
-                    table: JTable?, value: Any?, isSelected: Boolean, hasFocus: Boolean, row: Int, column: Int
-                ): Component {
-                    val team = teams.getOrNull(row)
-                    
-                    // 根据季后赛锁定状态显示标记
-                    val displayText = if (team != null) {
-                        val status = team.getRankStatus()
-                        val marker = if (status == RankStatus.PLAYOFF_CLINCHED) " ✓" else ""
-                        "${team.teamName}$marker"
-                    } else {
-                        value?.toString() ?: ""
-                    }
-                    
-                    val comp = super.getTableCellRendererComponent(table, displayText, isSelected, hasFocus, row, column)
-                    horizontalAlignment = SwingConstants.LEFT
-                    
-                    // 根据排名状态设置背景色
-                    if (team != null && !isSelected) {
-                        background = getRowBackgroundColor(team)
-                    }
-                    
-                    // 季后赛已锁定的球队加粗
-                    if (team != null) {
-                        font = if (team.getRankStatus() == RankStatus.PLAYOFF_CLINCHED) {
-                            font.deriveFont(Font.BOLD, 12f)
-                        } else {
-                            font.deriveFont(Font.PLAIN, 12f)
-                        }
-                    }
-                    
-                    return comp
-                }
-            }
-            
-            columnModel.getColumn(0).cellRenderer = centerRenderer
-            columnModel.getColumn(1).cellRenderer = teamRenderer
-            for (i in 2 until columnCount) {
-                columnModel.getColumn(i).cellRenderer = centerRenderer
+            } catch (e: Exception) {
+                // 加载失败时不做处理
             }
         }
-        
-        val scrollPane = JScrollPane(table).apply {
-            preferredSize = Dimension(340, teams.size * 28 + 30)
-            horizontalScrollBarPolicy = JScrollPane.HORIZONTAL_SCROLLBAR_NEVER
-        }
-        
-        panel.add(scrollPane, BorderLayout.CENTER)
-        
-        return panel
     }
-    
+
     /**
-     * 根据排名状态获取行背景色
+     * 球队缩写转Emoji占位符
      */
-    private fun getRowBackgroundColor(team: TeamStanding): Color {
-        return when (team.getRankStatus()) {
-            RankStatus.PLAYOFF_CLINCHED -> JBColor(0xC8E6C9, 0x1B3D1B) // 已锁定季后赛
-            RankStatus.PLAYOFF_SPOT -> JBColor(0xE8F5E9, 0x1B3D1B)     // 季后赛区
-            RankStatus.PLAY_IN -> JBColor(0xFFF3E0, 0x3D2D1B)          // 附加赛区
-            RankStatus.OUT -> JBColor(0xF5F5F5, 0x2D2D2D)              // 已淘汰
-        }
+    private fun teamAbbreviationToEmoji(abbrev: String): String {
+        return "🏀"
     }
-    
+
     /**
-     * 显示错误信息
+     * 显示错误
      */
     private fun showError(message: String) {
-        standingsPanel.removeAll()
+        tabbedPane.removeAll()
         val errorLabel = JLabel("❌ $message").apply {
-            foreground = JBColor.RED
-            alignmentX = Component.CENTER_ALIGNMENT
+            horizontalAlignment = SwingConstants.CENTER
+            font = font.deriveFont(14f)
+            border = EmptyBorder(50, 0, 0, 0)
         }
-        standingsPanel.add(errorLabel)
-        standingsPanel.revalidate()
-        standingsPanel.repaint()
+        tabbedPane.addTab("错误", JPanel(BorderLayout()).apply { add(errorLabel, BorderLayout.CENTER) })
     }
-    
+
     fun refresh() {
         loadStandings()
     }
-    
+
     fun dispose() {
         scope.cancel()
     }
