@@ -7,8 +7,7 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.ui.JBColor
 import kotlinx.coroutines.*
 import java.awt.*
-import java.awt.Image
-import java.net.URL
+import java.net.URI
 import javax.imageio.ImageIO
 import javax.swing.*
 import javax.swing.border.EmptyBorder
@@ -91,7 +90,7 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         urls.forEach { url ->
             if (!logoCache.containsKey(url)) {
                 try {
-                    ImageIO.read(URL(url))?.let { image ->
+                    ImageIO.read(URI(url).toURL())?.let { image ->
                         logoCache[url] = image.getScaledInstance(24, 24, Image.SCALE_SMOOTH)
                     }
                 } catch (_: Exception) {

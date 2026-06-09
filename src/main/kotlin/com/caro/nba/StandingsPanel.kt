@@ -10,7 +10,7 @@ import com.intellij.ui.JBColor
 import com.intellij.ui.components.JBScrollPane
 import kotlinx.coroutines.*
 import java.awt.*
-import java.net.URL
+import java.net.URI
 import javax.imageio.ImageIO
 import javax.swing.*
 import javax.swing.border.EmptyBorder
@@ -371,7 +371,7 @@ class StandingsPanel(
         // 异步加载
         scope.launch(Dispatchers.IO) {
             try {
-                val url = URL(logoUrl)
+                val url = URI(logoUrl).toURL()
                 val image = ImageIO.read(url)
                 if (image != null) {
                     val scaled = image.getScaledInstance(28, 28, Image.SCALE_SMOOTH)
