@@ -1,0 +1,100 @@
+src/main/kotlin/com/caro/nba/NBAScorePanel.kt
+  d022ad590b190cbc 3-4,8-9,17,19,23,51,105-112,132-140,142-144,202,205-206,208-220,222-228,230-235,237-238,240-253,255-257,260-262,264-267,269-271,273-280,282-284,286-304,306-308,310-311,321,326-327,329-334,338,342,501-506,513-514
+CLAUDE.md
+  a1166428a68108ec 1-84
+gradlew
+  d022ad590b190cbc 4,18-19,25-57,59-64,89,182,190-197,206-209,213,216-220,224,226-240,248
+src/main/kotlin/com/caro/nba/service/GameDetailService.kt
+  d022ad590b190cbc 3-6,11-12,15-25,29-31,37,39-46,49-55,57-58,64,66-68,70-72,76,78-82,84-85,87-88,92-97,99-107,109-112,114-120,122-141,144-146,149
+src/main/kotlin/com/caro/nba/datasource/impl/TheSportsDbDataSource.kt
+  d022ad590b190cbc 1-345
+gradle/wrapper/gradle-wrapper.properties
+  d022ad590b190cbc 7
+src/main/kotlin/com/caro/nba/service/StandingsService.kt
+  d022ad590b190cbc 3-6,9-12,15,20,22,24,26-35
+src/main/kotlin/com/caro/nba/datasource/DataSource.kt
+  d022ad590b190cbc 1-103
+src/main/kotlin/com/caro/nba/datasource/ScoreDataSource.kt
+  d022ad590b190cbc 1-15
+src/main/kotlin/com/caro/nba/datasource/StandingsDataSource.kt
+  d022ad590b190cbc 1-13
+src/main/kotlin/com/caro/nba/datasource/impl/NbaComDataSource.kt
+  d022ad590b190cbc 1-432
+src/main/kotlin/com/caro/nba/service/NBADataService.kt
+  d022ad590b190cbc 3-5,11-13,16,20,23,25,27,29-39,41,46,56
+src/main/kotlin/com/caro/nba/model/PlayoffBracket.kt
+  d022ad590b190cbc 1-40
+src/main/kotlin/com/caro/nba/datasource/impl/BallDontLieDataSource.kt
+  d022ad590b190cbc 1-440
+src/main/kotlin/com/caro/nba/datasource/impl/SinaDataSource.kt
+  d022ad590b190cbc 1-456
+src/main/kotlin/com/caro/nba/StandingsPanel.kt
+  d022ad590b190cbc 3,23,31,75,79-80,93-95,99-107,128,131,135,140,144,421-432,434,437,440
+src/main/kotlin/com/caro/nba/datasource/impl/TencentDataSource.kt
+  d022ad590b190cbc 1-390
+build.gradle.kts
+  d022ad590b190cbc 2,11,38,57-72
+src/main/kotlin/com/caro/nba/datasource/impl/MockPlayoffDataSource.kt
+  d022ad590b190cbc 1-133
+src/main/kotlin/com/caro/nba/PlayoffBracketPanel.kt
+  d022ad590b190cbc 37-38,40,42,45,47-50
+src/main/kotlin/com/caro/nba/AIAssistantPanel.kt
+  d022ad590b190cbc 327-330,335-337,471-474,484-485,562
+src/main/resources/META-INF/plugin.xml
+  d022ad590b190cbc 35,37-38,40,44-45,49-53
+src/main/kotlin/com/caro/nba/datasource/DataSourceManager.kt
+  d022ad590b190cbc 1-206
+src/main/kotlin/com/caro/nba/datasource/GameDetailDataSource.kt
+  d022ad590b190cbc 1-19
+gradlew.bat
+  d022ad590b190cbc 1-17,19-24,26-27,29-33,35-36,38-39,41-42,44-46,48-52,54,56,62-66,78-80,82-86
+src/main/kotlin/com/caro/nba/PlayByPlayPanel.kt
+  d022ad590b190cbc 5,25-26,107-111,118,146-159,252-257,259-267,273-283
+src/main/kotlin/com/caro/nba/datasource/PlayoffDataSource.kt
+  d022ad590b190cbc 1-13
+src/main/kotlin/com/caro/nba/datasource/impl/EspnDataSource.kt
+  d022ad590b190cbc 1-583
+src/main/kotlin/com/caro/nba/GameDetailDialog.kt
+  d022ad590b190cbc 5,21-22,30-31,61,67,100-101,132-140,367-368,370,372,379-390
+src/main/kotlin/com/caro/nba/datasource/DataSourceCommon.kt
+  d022ad590b190cbc 1-96
+src/main/kotlin/com/caro/nba/NBAScoreToolWindowFactory.kt
+  d022ad590b190cbc 35,38
+src/main/kotlin/com/caro/nba/service/PlayoffService.kt
+  d022ad590b190cbc 1-39
+src/main/kotlin/com/caro/nba/datasource/impl/Zhibo8DataSource.kt
+  d022ad590b190cbc 1-222
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "4208321c6a42662b716009ab4176423f4384d9a4",
+  "prompts": {
+    "a1166428a68108ec": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d7f7312b-52e3-461e-aed9-fd19f389a703",
+        "model": "glm-5.3"
+      },
+      "human_author": "JMS\\caro.niu",
+      "messages": [],
+      "total_additions": 84,
+      "total_deletions": 0,
+      "accepted_lines": 84,
+      "overriden_lines": 0
+    },
+    "d022ad590b190cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019347b6-b13b-4320-883b-9599e9c09b5b",
+        "model": "doubao-seed-2-1-turbo-260628"
+      },
+      "human_author": "JMS\\caro.niu",
+      "messages": [],
+      "total_additions": 7709,
+      "total_deletions": 4015,
+      "accepted_lines": 6285,
+      "overriden_lines": 52
+    }
+  }
+}
