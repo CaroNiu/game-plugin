@@ -8,7 +8,7 @@ plugins {
 }
 
 group = "com.caro"
-version = "4.1.0"
+version = "5.0.0"
 
 repositories {
     mavenCentral()
@@ -35,7 +35,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         name = "NBA Live Score"
-        version = "4.1.0"
+        version = "5.0.0"
         
         // 适配 IDEA 2024.2 到 2025.3+
         ideaVersion {
@@ -50,6 +50,12 @@ kotlin {
 }
 
 tasks {
+    // 禁用 searchable options 索引：本插件无需全文搜索支持，且该任务启动 headless IDE 时，
+    // 沙箱 disabled_plugins.txt 中被禁用的 Gradle 插件会导致 4 个依赖插件加载失败而退出
+    named("buildSearchableOptions") {
+        enabled = false
+    }
+
     withType<RunIdeTask> {
         jvmArgumentProviders += CommandLineArgumentProvider {
             listOf("-Xmx2G")
