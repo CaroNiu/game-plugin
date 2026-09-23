@@ -1,4 +1,5 @@
 import org.jetbrains.intellij.platform.gradle.tasks.RunIdeTask
+import java.io.File
 
 plugins {
     id("java")
@@ -7,7 +8,7 @@ plugins {
 }
 
 group = "com.caro"
-version = "4.0.7"
+version = "4.1.0"
 
 repositories {
     mavenCentral()
@@ -34,7 +35,7 @@ dependencies {
 intellijPlatform {
     pluginConfiguration {
         name = "NBA Live Score"
-        version = "4.0.7"
+        version = "4.1.0"
         
         // 适配 IDEA 2024.2 到 2025.3+
         ideaVersion {
@@ -52,6 +53,22 @@ tasks {
     withType<RunIdeTask> {
         jvmArgumentProviders += CommandLineArgumentProvider {
             listOf("-Xmx2G")
+        }
+        // 沙箱 IDE 禁用 Gradle 集成插件：IC-2024.3 解析 JetBrains 下发的最新
+        // Gradle-JDK 兼容表（含 JDK 25 条目）会抛 IllegalArgumentException: 25，
+        // 与本插件无关；沙箱调试用不到 Gradle，直接禁用以消除该 SEVERE 日志
+        doFirst {
+            val sandboxRoot = rootProject.layout.projectDirectory.dir("build/idea-sandbox").asFile
+            sandboxRoot.listFiles()?.filter { it.isDirectory }?.forEach { ideDir ->
+                val configDir = File(ideDir, "config")
+                if (configDir.isDirectory) {
+                    val disabledFile = File(configDir, "disabled_plugins.txt")
+                    val content = if (disabledFile.exists()) disabledFile.readText() else ""
+                    if (!content.contains("com.intellij.gradle")) {
+                        disabledFile.appendText("com.intellij.gradle\norg.jetbrains.plugins.gradle\n")
+                    }
+                }
+            }
         }
     }
 }

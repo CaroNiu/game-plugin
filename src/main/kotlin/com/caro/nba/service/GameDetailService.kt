@@ -1,342 +1,149 @@
 package com.caro.nba.service
 
+import com.caro.nba.NBASettingsState
+import com.caro.nba.datasource.DataSource
+import com.caro.nba.datasource.DataSourceCommon
+import com.caro.nba.datasource.DataSourceManager
 import com.caro.nba.model.GameDetail
 import com.caro.nba.model.PlayByPlay
-import com.google.gson.Gson
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import okhttp3.OkHttpClient
 import okhttp3.Request
-import java.util.concurrent.TimeUnit
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+
+/**
+ * 比赛引用信息：用于跨数据源反查。
+ *
+ * 中文数据源（新浪/直播吧）的 gameId 与 ESPN 的 eventId 不通用，
+ * 直接用其查 ESPN 详情必然失败；此时按「美东日期 + 两队缩写」
+ * 调 ESPN scoreboard 反查出真实的 eventId 后再查详情/文字转播。
+ */
+data class GameRef(
+    val easternDate: LocalDate,
+    val homeAbbr: String,
+    val awayAbbr: String
+)
 
 /**
  * 比赛详情服务
+ *
+ * 委托给 DataSourceManager 进行多数据源管理和自动 fallback。
+ * 数据源配置从 NBASettingsState 读取。
  */
 class GameDetailService {
-    private val client = OkHttpClient.Builder()
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
-        .build()
-
-    private val gson = Gson()
-
-    private val summaryUrl = "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/summary"
-
-    // 英文队名到中文映射
-    private val teamNameMap = mapOf(
-        "Hawks" to "老鹰", "Celtics" to "凯尔特人", "Nets" to "篮网", "Hornets" to "黄蜂",
-        "Bulls" to "公牛", "Cavaliers" to "骑士", "Mavericks" to "独行侠", "Nuggets" to "掘金",
-        "Pistons" to "活塞", "Warriors" to "勇士", "Rockets" to "火箭", "Pacers" to "步行者",
-        "Clippers" to "快船", "Lakers" to "湖人", "Grizzlies" to "灰熊", "Heat" to "热火",
-        "Bucks" to "雄鹿", "Timberwolves" to "森林狼", "Pelicans" to "鹈鹕", "Knicks" to "尼克斯",
-        "Thunder" to "雷霆", "Magic" to "魔术", "76ers" to "76人", "Suns" to "太阳",
-        "Trail Blazers" to "开拓者", "Kings" to "国王", "Spurs" to "马刺", "Raptors" to "猛龙",
-        "Jazz" to "爵士", "Wizards" to "奇才"
-    )
 
     /**
      * 获取比赛详情
+     * @param ref 比赛引用信息（中文源的 gameId 与 ESPN 不通用时用于反查），可为 null
      */
-    fun getGameDetail(gameId: String): Result<GameDetail> {
+    fun getGameDetail(gameId: String, ref: GameRef? = null): Result<GameDetail> {
+        val direct = getGameDetailWithSource(gameId).first
+        if (direct.isSuccess || ref == null) return direct
+
+        // 直接查失败：可能是中文源 gameId，按日期+队名反查 ESPN eventId 后重试
+        val espnEventId = findEspnEventId(ref) ?: return direct
+        DataSourceCommon.debugLog("详情反查: $gameId -> ESPN event $espnEventId")
+        return getGameDetailWithSource(espnEventId).first
+    }
+
+    /**
+     * 获取比赛详情（返回实际使用的数据源）
+     */
+    fun getGameDetailWithSource(gameId: String): Pair<Result<GameDetail>, DataSource> {
         return try {
-            val url = "$summaryUrl?event=$gameId"
-
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0")
-                .build()
-
-            val response = client.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                return Result.failure(Exception("API请求失败: ${response.code}"))
-            }
-
-            val body = response.body?.string() ?: return Result.failure(Exception("响应为空"))
-            val detail = parseGameDetail(body, gameId)
-            Result.success(detail)
+            val manager = buildManager()
+            manager.getGameDetail(gameId)
         } catch (e: Exception) {
-            Result.failure(e)
+            val failure: Result<GameDetail> = Result.failure(e)
+            return failure to DataSource.ESPN
         }
     }
-
-    private fun parseGameDetail(json: String, gameId: String): GameDetail {
-        val root = gson.fromJson(json, JsonObject::class.java)
-
-        // 解析场馆
-        val gameInfo = root.getAsJsonObject("gameInfo")
-        val venueObj = gameInfo?.getAsJsonObject("venue")
-        val venue = venueObj?.let {
-            GameDetail.Venue(
-                name = it.get("fullName")?.asString ?: "",
-                city = it.getAsJsonObject("address")?.get("city")?.asString ?: ""
-            )
-        }
-
-        // 从 header.competitions[0].competitors 获取比分（这是正确的数据源）
-        val header = root.getAsJsonObject("header")
-        val competitions = header?.getAsJsonArray("competitions")
-        val competition = competitions?.get(0)?.asJsonObject
-        val competitors = competition?.getAsJsonArray("competitors")
-
-        var homeTeam: GameDetail.TeamDetail? = null
-        var awayTeam: GameDetail.TeamDetail? = null
-        var status = "scheduled"
-        var period = 0
-        var statusDetail = ""
-
-        // 解析状态
-        val statusObj = competition?.getAsJsonObject("status")
-        val type = statusObj?.getAsJsonObject("type")
-        val state = type?.get("state")?.asString ?: "pre"
-        statusDetail = type?.get("detail")?.asString ?: ""
-        period = type?.get("period")?.asInt ?: 0
-
-        status = when (state) {
-            "pre" -> "scheduled"
-            "in" -> "in_progress"
-            "post" -> "finished"
-            else -> state
-        }
-
-        // 解析球队和比分
-        competitors?.forEach { compElement ->
-            val compObj = compElement.asJsonObject
-            val isHome = compObj.get("homeAway")?.asString == "home"
-            val team = compObj.getAsJsonObject("team")
-            val shortDisplayName = team.get("shortDisplayName")?.asString ?: ""
-            val score = compObj.get("score")?.asString?.toIntOrNull() ?: 0
-
-            val teamDetail = GameDetail.TeamDetail(
-                id = team.get("id")?.asString ?: "",
-                name = teamNameMap[shortDisplayName] ?: shortDisplayName,
-                abbreviation = team.get("abbreviation")?.asString ?: "",
-                logo = team.getAsJsonArray("logos")?.get(0)?.asJsonObject?.get("href")?.asString ?: "",
-                score = score,
-                statistics = emptyMap(),
-                leaders = emptyList()
-            )
-
-            if (isHome) homeTeam = teamDetail else awayTeam = teamDetail
-        }
-
-        // 解析球员领袖
-        val leadersArray = root.getAsJsonArray("leaders") ?: emptyList()
-        val homeLeaders = mutableListOf<GameDetail.TeamLeader>()
-        val awayLeaders = mutableListOf<GameDetail.TeamLeader>()
-
-        leadersArray.forEach { teamLeadersElement ->
-            val teamLeadersObj = teamLeadersElement.asJsonObject
-            val teamId = teamLeadersObj.getAsJsonObject("team")?.get("id")?.asString
-            val isHomeTeam = teamId == homeTeam?.id
-
-            teamLeadersObj.getAsJsonArray("leaders")?.forEach { categoryElement ->
-                val categoryObj = categoryElement.asJsonObject
-                val categoryName = categoryObj.get("displayName")?.asString ?: ""
-
-                categoryObj.getAsJsonArray("leaders")?.firstOrNull()?.let { playerElement ->
-                    val playerObj = playerElement.asJsonObject
-                    val athlete = playerObj.getAsJsonObject("athlete")
-
-                    val leader = GameDetail.TeamLeader(
-                        category = categoryName,
-                        playerName = athlete?.get("fullName")?.asString ?: "",
-                        playerJersey = athlete?.get("jersey")?.asString ?: "",
-                        playerHeadshot = athlete?.getAsJsonObject("headshot")?.get("href")?.asString ?: "",
-                        value = playerObj.get("displayValue")?.asString ?: ""
-                    )
-
-                    if (isHomeTeam) homeLeaders.add(leader) else awayLeaders.add(leader)
-                }
-            }
-        }
-
-        homeTeam = homeTeam?.copy(leaders = homeLeaders)
-        awayTeam = awayTeam?.copy(leaders = awayLeaders)
-
-        // 解析球员统计数据
-        val boxscore = root.getAsJsonObject("boxscore")
-        val playersArray = boxscore?.getAsJsonArray("players") ?: emptyList()
-
-        val homePlayers = mutableListOf<GameDetail.Player>()
-        val awayPlayers = mutableListOf<GameDetail.Player>()
-
-        playersArray.forEach { teamElement ->
-            val teamObj = teamElement.asJsonObject
-            val teamId = teamObj.getAsJsonObject("team")?.get("id")?.asString
-            val isHomeTeam = teamId == homeTeam?.id
-
-            val statistics = teamObj.getAsJsonArray("statistics")
-            statistics?.forEach { statBlock ->
-                val block = statBlock.asJsonObject
-                val labels = block.getAsJsonArray("labels")?.map { it.asString } ?: emptyList()
-                val athletes = block.getAsJsonArray("athletes") ?: emptyList()
-
-                athletes.forEach { athleteElement ->
-                    val athleteObj = athleteElement.asJsonObject
-                    val athleteInfo = athleteObj.getAsJsonObject("athlete")
-                    val stats = athleteObj.getAsJsonArray("stats")?.map { it.asString } ?: emptyList()
-
-                    // 根据 labels 获取对应值
-                    fun getStat(label: String): String {
-                        val index = labels.indexOf(label)
-                        return if (index >= 0 && index < stats.size) stats[index] else "0"
-                    }
-
-                    val player = GameDetail.Player(
-                        id = athleteInfo?.get("id")?.asString ?: "",
-                        name = athleteInfo?.get("displayName")?.asString ?: "",
-                        jersey = athleteInfo?.get("jersey")?.asString ?: "",
-                        position = athleteInfo?.getAsJsonObject("position")?.get("abbreviation")?.asString ?: "",
-                        minutes = getStat("MIN"),
-                        points = getStat("PTS"),
-                        rebounds = getStat("REB"),
-                        assists = getStat("AST"),
-                        steals = getStat("STL"),
-                        blocks = getStat("BLK"),
-                        turnovers = getStat("TO"),
-                        fgMade = getStat("FG").split("-").getOrNull(0) ?: "0",
-                        fgAttempts = getStat("FG").split("-").getOrNull(1) ?: "0",
-                        threeMade = getStat("3PT").split("-").getOrNull(0) ?: "0",
-                        threeAttempts = getStat("3PT").split("-").getOrNull(1) ?: "0",
-                        ftMade = getStat("FT").split("-").getOrNull(0) ?: "0",
-                        ftAttempts = getStat("FT").split("-").getOrNull(1) ?: "0",
-                        plusMinus = getStat("+/-"),
-                        headshot = athleteInfo?.getAsJsonObject("headshot")?.get("href")?.asString ?: "",
-                        playerUrl = athleteInfo?.getAsJsonArray("links")?.get(0)?.asJsonObject?.get("href")?.asString ?: ""
-                    )
-
-                    if (isHomeTeam) homePlayers.add(player) else awayPlayers.add(player)
-                }
-            }
-        }
-
-        return GameDetail(
-            gameId = gameId,
-            status = status,
-            clock = "",
-            period = period,
-            venue = venue,
-            homeTeam = homeTeam ?: GameDetail.TeamDetail("", "", "", ""),
-            awayTeam = awayTeam ?: GameDetail.TeamDetail("", "", "", ""),
-            players = GameDetail.PlayerStats(homePlayers, awayPlayers),
-            highlights = emptyList()
-        )
-    }
-
-    // ESPN 球队 ID 到球队名称和缩写的映射
-    private val teamIdMap = mapOf(
-        "1" to Pair("Warriors", "GSW"),
-        "2" to Pair("Lakers", "LAL"),
-        "3" to Pair("Heat", "MIA"),
-        "4" to Pair("Suns", "PHX"),
-        "5" to Pair("Spurs", "SAS"),
-        "6" to Pair("Bulls", "CHI"),
-        "7" to Pair("Cavaliers", "CLE"),
-        "8" to Pair("Mavericks", "DAL"),
-        "9" to Pair("Nets", "BKN"),
-        "10" to Pair("Knicks", "NYK"),
-        "11" to Pair("Magic", "ORL"),
-        "12" to Pair("76ers", "PHI"),
-        "14" to Pair("Kings", "SAC"),
-        "15" to Pair("Hornets", "CHA"),
-        "16" to Pair("Celtics", "BOS"),
-        "17" to Pair("Clippers", "LAC"),
-        "18" to Pair("Raptors", "TOR"),
-        "19" to Pair("Rockets", "HOU"),
-        "20" to Pair("Nuggets", "DEN"),
-        "21" to Pair("Timberwolves", "MIN"),
-        "22" to Pair("Grizzlies", "MEM"),
-        "23" to Pair("Pelicans", "NOP"),
-        "24" to Pair("Thunder", "OKC"),
-        "25" to Pair("Pacers", "IND"),
-        "27" to Pair("Bucks", "MIL"),
-        "28" to Pair("Hawks", "ATL"),
-        "29" to Pair("Wizards", "WAS"),
-        "30" to Pair("Jazz", "UTA"),
-        "38" to Pair("Trail Blazers", "POR")
-    )
 
     /**
      * 获取比赛文字转播数据
+     * @param ref 比赛引用信息（中文源的 gameId 与 ESPN 不通用时用于反查），可为 null
      */
-    fun getPlayByPlay(gameId: String, homeTeamId: String, awayTeamId: String): Result<PlayByPlay> {
+    fun getPlayByPlay(gameId: String, homeTeamId: String, awayTeamId: String, ref: GameRef? = null): Result<PlayByPlay> {
+        val direct = getPlayByPlayWithSource(gameId, homeTeamId, awayTeamId).first
+        if (direct.isSuccess || ref == null) return direct
+
+        val espnEventId = findEspnEventId(ref) ?: return direct
+        DataSourceCommon.debugLog("文字转播反查: $gameId -> ESPN event $espnEventId")
+        return getPlayByPlayWithSource(espnEventId, homeTeamId, awayTeamId).first
+    }
+
+    /**
+     * 获取比赛文字转播数据（返回实际使用的数据源）
+     */
+    fun getPlayByPlayWithSource(
+        gameId: String,
+        homeTeamId: String,
+        awayTeamId: String
+    ): Pair<Result<PlayByPlay>, DataSource> {
         return try {
-            val url = "$summaryUrl?event=$gameId"
-
-            val request = Request.Builder()
-                .url(url)
-                .header("User-Agent", "Mozilla/5.0")
-                .build()
-
-            val response = client.newCall(request).execute()
-
-            if (!response.isSuccessful) {
-                return Result.failure(Exception("API请求失败: ${response.code}"))
-            }
-
-            val body = response.body?.string() ?: return Result.failure(Exception("响应为空"))
-            val plays = parsePlayByPlay(body, gameId, homeTeamId, awayTeamId)
-            Result.success(plays)
+            val manager = buildManager()
+            manager.getPlayByPlay(gameId, homeTeamId, awayTeamId)
         } catch (e: Exception) {
-            Result.failure(e)
+            val failure: Result<PlayByPlay> = Result.failure(e)
+            return failure to DataSource.ESPN
         }
     }
 
-    private fun parsePlayByPlay(json: String, gameId: String, homeTeamId: String, awayTeamId: String): PlayByPlay {
-        val root = gson.fromJson(json, JsonObject::class.java)
-        val playsArray = root.getAsJsonArray("plays") ?: JsonArray()
+    private fun buildManager(): DataSourceManager {
+        val settings = NBASettingsState.getInstance()
+        val primarySource = DataSource.fromId(settings.dataSource)
+        val sportsDbKey = settings.sportsDbApiKey.ifBlank { "3" }
+        return DataSourceManager(primarySource, settings.ballDontLieApiKey, sportsDbKey)
+    }
 
-        val plays = playsArray.mapNotNull { playElement ->
-            try {
-                val play = playElement.asJsonObject
+    /**
+     * 按日期+队名缩写反查 ESPN eventId
+     * @return 匹配比赛的 ESPN eventId，未找到或网络失败返回 null
+     */
+    private fun findEspnEventId(ref: GameRef): String? {
+        return try {
+            val home = ref.homeAbbr.uppercase()
+            val away = ref.awayAbbr.uppercase()
+            if (home.isBlank() || away.isBlank()) return null
 
-                // 获取球队信息
-                val teamObj = play.getAsJsonObject("team")
-                val teamId = teamObj?.get("id")?.asString ?: ""
-                val teamInfo = teamIdMap[teamId] ?: Pair("", "")
+            val dateStr = ref.easternDate.format(DateTimeFormatter.ofPattern("yyyyMMdd"))
+            // site.web.api.espn.com 可达性更好（site.api 对部分网络 403）
+            val url = "https://site.web.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard?dates=$dateStr"
+            DataSourceCommon.debugLog("详情反查 ESPN scoreboard: $url")
 
-                // 获取参与者信息
-                val participantsArray = play.getAsJsonArray("participants")
-                val participantNames = participantsArray?.mapNotNull { p ->
-                    p.asJsonObject.getAsJsonObject("athlete")?.get("displayName")?.asString
-                } ?: emptyList()
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", DataSourceCommon.DEFAULT_USER_AGENT)
+                .header("Accept", "application/json, text/plain, */*")
+                .header("Origin", "https://www.espn.com")
+                .header("Referer", "https://www.espn.com/")
+                .build()
 
-                // 判断节数
-                val periodObj = play.getAsJsonObject("period")
-                val periodNumber = periodObj?.get("number")?.asInt ?: 1
+            DataSourceCommon.client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    DataSourceCommon.debugLog("详情反查 ESPN scoreboard 失败: HTTP ${response.code}")
+                    return null
+                }
+                val body = response.body?.string() ?: return null
+                val root = DataSourceCommon.gson.fromJson(body, JsonObject::class.java)
+                val events = root.getAsJsonArray("events") ?: return null
 
-                // 获取时间
-                val clockObj = play.getAsJsonObject("clock")
-                val clockDisplay = clockObj?.get("displayValue")?.asString ?: ""
-
-                // 获取事件类型
-                val typeObj = play.getAsJsonObject("type")
-                val playType = typeObj?.get("text")?.asString ?: ""
-
-                PlayByPlay.Play(
-                    id = play.get("id")?.asString ?: "",
-                    sequenceNumber = play.get("sequenceNumber")?.asString ?: "",
-                    text = play.get("text")?.asString ?: "",
-                    shortText = play.get("shortDescription")?.asString ?: "",
-                    clock = clockDisplay,
-                    period = periodNumber,
-                    periodDisplay = periodObj?.get("displayValue")?.asString ?: "",
-                    teamId = teamId,
-                    teamName = teamInfo.first,
-                    awayScore = play.get("awayScore")?.asInt ?: 0,
-                    homeScore = play.get("homeScore")?.asInt ?: 0,
-                    isScoringPlay = play.get("scoringPlay")?.asBoolean ?: false,
-                    scoreValue = play.get("scoreValue")?.asInt ?: 0,
-                    isShootingPlay = play.get("shootingPlay")?.asBoolean ?: false,
-                    playType = playType,
-                    participants = participantNames
-                )
-            } catch (e: Exception) {
+                for (event in events) {
+                    val competitors = event.asJsonObject
+                        .getAsJsonArray("competitions")?.get(0)?.asJsonObject
+                        ?.getAsJsonArray("competitors") ?: continue
+                    val abbrs = competitors.mapNotNull { c ->
+                        c.asJsonObject.getAsJsonObject("team")?.get("abbreviation")?.asString?.uppercase()
+                    }.toSet()
+                    if (abbrs == setOf(home, away)) {
+                        return event.asJsonObject.get("id")?.asString
+                    }
+                }
                 null
             }
+        } catch (e: Exception) {
+            DataSourceCommon.debugLog("详情反查异常: ${e.message}")
+            null
         }
-
-        return PlayByPlay(gameId, plays)
     }
 }

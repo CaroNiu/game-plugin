@@ -34,12 +34,20 @@ class PlayoffBracketPanel : JPanel(BorderLayout()) {
         background = JBColor.background()
         border = EmptyBorder(16, 16, 16, 16)
 
-        val titlePanel = JPanel(FlowLayout(FlowLayout.CENTER)).apply {
+        // 标题 + 演示数据说明（腾讯对阵图源已下线，当前仅 ESPN/NBA.com 路径下的 mock 演示数据）
+        val titlePanel = JPanel(BorderLayout()).apply {
             background = JBColor.background()
-            add(JLabel("🏆 NBA 季后赛对阵图").apply {
+            border = EmptyBorder(0, 0, 8, 0)
+
+            add(JLabel("🏆 NBA 季后赛对阵图", SwingConstants.CENTER).apply {
                 font = font.deriveFont(Font.BOLD, 22f)
                 foreground = JBColor(0xC90C2E, 0xE03A3E)
-            })
+            }, BorderLayout.CENTER)
+
+            add(JLabel("⚠️ 演示数据：腾讯对阵图接口已下线，暂无真实数据源，以下为示意内容", SwingConstants.CENTER).apply {
+                font = font.deriveFont(Font.PLAIN, 12f)
+                foreground = JBColor(0xCC8800, 0xFFCC33)
+            }, BorderLayout.SOUTH)
         }
 
         val scrollPane = JScrollPane(bracketPanel).apply {

@@ -2,6 +2,7 @@ package com.caro.nba
 
 import com.caro.nba.model.GameDetail
 import com.caro.nba.service.GameDetailService
+import com.caro.nba.service.GameRef
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
@@ -17,6 +18,8 @@ import javax.swing.table.DefaultTableModel
 
 /**
  * 比赛详情对话框 - 展示球员统计数据
+ *
+ * @param gameRef 比赛引用信息：中文数据源的 gameId 与 ESPN 不通用，用于失败时反查 ESPN eventId
  */
 class GameDetailDialog(
     private val project: Project,
@@ -24,7 +27,8 @@ class GameDetailDialog(
     private val homeTeamName: String,
     private val awayTeamName: String,
     private val homeTeamId: String = "",
-    private val awayTeamId: String = ""
+    private val awayTeamId: String = "",
+    private val gameRef: GameRef? = null
 ) : DialogWrapper(project) {
 
     private val service = GameDetailService()
@@ -54,13 +58,13 @@ class GameDetailDialog(
         // 后台线程加载数据
         Thread {
             try {
-                val result = service.getGameDetail(gameId)
+                val result = service.getGameDetail(gameId, gameRef)
                 result.fold(
                     onSuccess = { detail ->
                         SwingUtilities.invokeLater { showGameDetail(detail) }
                     },
                     onFailure = { error ->
-                        SwingUtilities.invokeLater { showError(error.message ?: "加载失败") }
+                        SwingUtilities.invokeLater { showError(friendlyError(error.message)) }
                     }
                 )
             } catch (e: Exception) {
@@ -93,7 +97,8 @@ class GameDetailDialog(
                     awayTeamName,
                     homeTeamId,
                     awayTeamId,
-                    currentStatus
+                    currentStatus,
+                    gameRef
                 )
                 dialog.show()
             } catch (ex: Exception) {
@@ -124,6 +129,15 @@ class GameDetailDialog(
         // 2. 球员统计数据表格
         if (detail.players != null) {
             addPlayerStatsSection(detail)
+        } else {
+            // 新浪 boxscore 不含球员统计，给出说明避免用户疑惑
+            contentPanel?.add(JLabel("<html><div style='padding: 10px; text-align: center;'>"
+                    + "当前数据源（新浪）不提供球员统计数据，<br>如需球员数据请在比分面板切换到 ESPN 数据源后重新打开。</div></html>").apply {
+                font = font.deriveFont(12f)
+                foreground = JBColor.GRAY
+                alignmentX = Component.CENTER_ALIGNMENT
+            })
+            contentPanel?.add(Box.createVerticalStrut(15))
         }
 
         val scrollPane = JBScrollPane(contentPanel).apply {
@@ -350,13 +364,28 @@ class GameDetailDialog(
 
     private fun showError(message: String) {
         mainPanel?.removeAll()
-        val errorLabel = JLabel("❌ $message").apply {
+        // JLabel 不支持 \n 换行，用 html 排版多行提示
+        val errorLabel = JLabel("<html><div style='text-align: center; padding: 20px;'>❌ $message</div></html>").apply {
             foreground = JBColor.RED
-            font = font.deriveFont(16f)
+            font = font.deriveFont(14f)
             horizontalAlignment = SwingConstants.CENTER
+            verticalAlignment = SwingConstants.CENTER
         }
         mainPanel?.add(errorLabel, BorderLayout.CENTER)
         mainPanel?.revalidate()
         mainPanel?.repaint()
+    }
+
+    /**
+     * 将底层报错翻译为用户可理解的提示
+     */
+    private fun friendlyError(message: String?): String {
+        val msg = message ?: "加载失败"
+        return if (msg.contains("所有数据源均失败")) {
+            "无法获取比赛详情。<br>新浪源未收录该比赛，且 ESPN 反查 eventId 也失败" +
+                    "（当前网络可能无法访问 ESPN）。"
+        } else {
+            msg
+        }
     }
 }

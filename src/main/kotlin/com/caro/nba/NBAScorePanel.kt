@@ -1,8 +1,12 @@
 package com.caro.nba
 
+import com.caro.nba.datasource.DataSource
+import com.caro.nba.datasource.DataSourceCommon
 import com.caro.nba.model.NBAGame
 import com.caro.nba.model.NBAScoreboard
 import com.caro.nba.service.NBADataService
+import com.caro.nba.service.GameRef
+import com.caro.nba.NBASettingsState
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.ui.JBColor
@@ -10,10 +14,13 @@ import com.intellij.ui.components.JBScrollPane
 import com.intellij.util.ui.JBUI
 import kotlinx.coroutines.*
 import java.awt.*
+import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.YearMonth
 import java.time.ZoneId
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.time.format.TextStyle
 import java.util.*
 import javax.swing.*
 
@@ -41,6 +48,7 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     private val datePickerButton = JButton("📅")
     private val refreshButton = JButton("刷新")
     private val autoRefreshCheckBox = JCheckBox("自动刷新", false)
+    private val dataSourceCombo = JComboBox(DataSource.values().map { it.displayName }.toTypedArray())
     private val statusLabel = JLabel("准备就绪")
 
     // Tab 容器
@@ -94,7 +102,14 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         val actionPanel = JPanel(FlowLayout(FlowLayout.LEFT, 10, 2))
         actionPanel.add(refreshButton)
         actionPanel.add(autoRefreshCheckBox)
-        actionPanel.add(Box.createHorizontalStrut(20))
+        actionPanel.add(Box.createHorizontalStrut(10))
+        actionPanel.add(JLabel("数据源:").apply { font = font.deriveFont(Font.PLAIN, 11f) })
+        actionPanel.add(dataSourceCombo.apply {
+            preferredSize = Dimension(110, 24)
+            font = font.deriveFont(Font.PLAIN, 11f)
+            toolTipText = "选择数据来源，主源失败时会自动降级到备用源"
+        })
+        actionPanel.add(Box.createHorizontalStrut(10))
         actionPanel.add(statusLabel)
         
         // 顶部容器
@@ -113,7 +128,21 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
         datePickerButton.addActionListener { showDatePicker() }
         refreshButton.addActionListener { loadGames() }
         autoRefreshCheckBox.addActionListener { setupAutoRefresh() }
+
+        // 数据源切换
+        dataSourceCombo.addActionListener {
+            val selectedIndex = dataSourceCombo.selectedIndex
+            if (selectedIndex >= 0 && selectedIndex < DataSource.values().size) {
+                val selectedSource = DataSource.values()[selectedIndex]
+                NBASettingsState.getInstance().dataSource = selectedSource.id
+                loadGames()  // 重新加载数据
+            }
+        }
         
+        // 初始化数据源选中值
+        val currentSource = DataSource.fromId(NBASettingsState.getInstance().dataSource)
+        dataSourceCombo.selectedIndex = DataSource.values().indexOf(currentSource).coerceAtLeast(0)
+
         // 更新日期
         updateDateLabel()
         
@@ -170,29 +199,116 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     }
     
     /**
-     * 显示日期选择器
+     * 显示日期选择器（月历点选）
      */
     private fun showDatePicker() {
-        // 使用简单的输入对话框
-        val input = JOptionPane.showInputDialog(
-            this,
-            "请输入日期 (格式: yyyy-MM-dd):",
+        val dialog = JDialog(
+            SwingUtilities.getWindowAncestor(this),
             "选择日期",
-            JOptionPane.PLAIN_MESSAGE,
-            null,
-            null,
-            selectedDate.format(DateTimeFormatter.ISO_LOCAL_DATE)
-        ) as? String
+            java.awt.Dialog.ModalityType.APPLICATION_MODAL
+        )
+        dialog.defaultCloseOperation = JDialog.DISPOSE_ON_CLOSE
+        dialog.contentPane = MonthCalendarPanel(selectedDate) { chosen ->
+            dialog.dispose()
+            selectedDate = chosen
+            updateDateLabel()
+            loadGames()
+        }
+        dialog.pack()
+        dialog.setLocationRelativeTo(this)
+        dialog.isVisible = true
+    }
 
-        if (input != null) {
-            try {
-                val newDate = LocalDate.parse(input, DateTimeFormatter.ISO_LOCAL_DATE)
-                selectedDate = newDate
-                updateDateLabel()
-                loadGames()
-            } catch (e: Exception) {
-                JOptionPane.showMessageDialog(this, "日期格式错误，请使用 yyyy-MM-dd 格式", "错误", JOptionPane.ERROR_MESSAGE)
+    /**
+     * 月历面板：◀ ▶ 翻月，点击日期直接选中并关闭
+     */
+    private inner class MonthCalendarPanel(
+        initial: LocalDate,
+        private val onPick: (LocalDate) -> Unit
+    ) : JPanel(BorderLayout()) {
+
+        private var currentMonth: YearMonth = YearMonth.from(initial)
+        private val selectedDateInPicker: LocalDate = initial
+        private val monthLabel = JLabel("", SwingConstants.CENTER).apply {
+            font = font.deriveFont(Font.BOLD, 14f)
+        }
+        private val gridPanel = JPanel(GridLayout(0, 7, 3, 3))
+
+        init {
+            border = JBUI.Borders.empty(12)
+
+            // 顶部：◀ 月份 ▶ + 回到今天
+            val header = JPanel(BorderLayout(6, 0)).apply {
+                add(JButton("◀").apply {
+                    preferredSize = Dimension(45, 28)
+                    isFocusable = false
+                    addActionListener { currentMonth = currentMonth.minusMonths(1); rebuild() }
+                }, BorderLayout.WEST)
+                add(monthLabel, BorderLayout.CENTER)
+                add(JButton("▶").apply {
+                    preferredSize = Dimension(45, 28)
+                    isFocusable = false
+                    addActionListener { currentMonth = currentMonth.plusMonths(1); rebuild() }
+                }, BorderLayout.EAST)
             }
+
+            val todayButton = JButton("回到今天").apply {
+                isFocusable = false
+                addActionListener { onPick(LocalDate.now()) }
+            }
+
+            val north = JPanel(BorderLayout(0, 8))
+            north.add(header, BorderLayout.NORTH)
+            north.add(todayButton, BorderLayout.SOUTH)
+
+            add(north, BorderLayout.NORTH)
+            add(gridPanel, BorderLayout.CENTER)
+            rebuild()
+        }
+
+        private fun rebuild() {
+            monthLabel.text = "${currentMonth.year}年${currentMonth.monthValue}月"
+            gridPanel.removeAll()
+
+            // 星期标题行（周一开始）
+            for (dow in DayOfWeek.entries) {
+                gridPanel.add(JLabel(dow.getDisplayName(TextStyle.NARROW, Locale.CHINA)).apply {
+                    horizontalAlignment = SwingConstants.CENTER
+                    foreground = JBColor.GRAY
+                    font = font.deriveFont(Font.PLAIN, 11f)
+                })
+            }
+
+            // 首列补位（周一开始对齐）
+            val leading = currentMonth.atDay(1).dayOfWeek.value - 1
+            repeat(leading) { gridPanel.add(JLabel("")) }
+
+            // 每日按钮
+            val today = LocalDate.now()
+            for (day in 1..currentMonth.lengthOfMonth()) {
+                val date = currentMonth.atDay(day)
+                gridPanel.add(JButton(day.toString()).apply {
+                    isFocusable = false
+                    preferredSize = Dimension(44, 32)
+                    margin = Insets(2, 2, 2, 2)
+                    if (date == today) {
+                        font = font.deriveFont(Font.BOLD, 12f)
+                        foreground = JBColor(0x0066CC, 0x4A9EFF)
+                    }
+                    if (date == selectedDateInPicker) {
+                        isOpaque = true
+                        background = JBColor(0x0066CC, 0x4A9EFF)
+                    }
+                    addActionListener { onPick(date) }
+                })
+            }
+
+            // 尾部补齐整行
+            val used = leading + currentMonth.lengthOfMonth()
+            repeat((7 - used % 7) % 7) { gridPanel.add(JLabel("")) }
+
+            gridPanel.revalidate()
+            gridPanel.repaint()
         }
     }
     
@@ -202,18 +318,28 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
     private fun loadGames() {
         statusLabel.text = "加载中..."
         refreshButton.isEnabled = false
+        dataSourceCombo.isEnabled = false
 
         scope.launch {
             // 将用户选择的本地日期转换为美东日期进行API查询
             val queryDate = toEasternDate(selectedDate)
-            val result = service.getGames(queryDate)
+            DataSourceCommon.debugLog("加载比分: 本地日期=$selectedDate -> 美东查询日期=$queryDate")
+            val (result, source) = service.getGamesWithSource(queryDate)
+
+            DataSourceCommon.debugLog(
+                result.fold(
+                    onSuccess = { "比分结果: ${source.displayName} 返回 ${it.games.size} 场" },
+                    onFailure = { "比分结果: 失败 - ${it.message}" }
+                )
+            )
 
             ApplicationManager.getApplication().invokeLater {
                 refreshButton.isEnabled = true
+                dataSourceCombo.isEnabled = true
                 result.fold(
                     onSuccess = { scoreboard ->
                         updateGamesPanel(scoreboard)
-                        statusLabel.text = "✅ 共 ${scoreboard.games.size} 场"
+                        statusLabel.text = "✅ ${source.displayName} · 共 ${scoreboard.games.size} 场"
                     },
                     onFailure = { error ->
                         showError(error.message ?: "加载失败")
@@ -372,13 +498,20 @@ class NBAScorePanel(private val project: Project) : JPanel(BorderLayout()) {
      * 显示比赛详情
      */
     private fun showGameDetail(game: NBAGame) {
+        // 中文数据源的 gameId 与 ESPN 不通用，附上「美东日期+队名缩写」供详情/文字转播反查 ESPN eventId
+        val gameRef = if (game.homeTeam.abbreviation.isNotBlank() && game.awayTeam.abbreviation.isNotBlank()) {
+            GameRef(toEasternDate(selectedDate), game.homeTeam.abbreviation, game.awayTeam.abbreviation)
+        } else {
+            null
+        }
         val dialog = GameDetailDialog(
             project,
             game.gameId,
             game.homeTeam.name,
             game.awayTeam.name,
             game.homeTeam.id,
-            game.awayTeam.id
+            game.awayTeam.id,
+            gameRef
         )
         dialog.show()
     }

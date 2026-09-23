@@ -1,5 +1,6 @@
 package com.caro.nba
 
+import com.caro.nba.datasource.DataSource
 import com.caro.nba.model.NBAStandings
 import com.caro.nba.model.RankStatus
 import com.caro.nba.model.TeamStanding
@@ -19,8 +20,7 @@ import javax.swing.border.EmptyBorder
  * NBA 排名面板 - 重新设计的整洁版本
  */
 class StandingsPanel(
-    private val project: Project,
-    private val onPlayoffClick: (() -> Unit)? = null
+    private val project: Project
 ) : JPanel(BorderLayout()) {
 
     private val service = StandingsService()
@@ -28,7 +28,7 @@ class StandingsPanel(
 
     // UI 组件
     private val refreshButton = JButton("刷新")
-    private val playoffButton = JButton("季后赛")
+    private val dataSourceCombo = JComboBox(DataSource.values().map { it.displayName }.toTypedArray())
     private val statusLabel = JLabel("准备就绪")
 
     // 标签页切换
@@ -72,11 +72,12 @@ class StandingsPanel(
 
             // 设置按钮尺寸
             refreshButton.preferredSize = Dimension(100, 32)
-            playoffButton.preferredSize = Dimension(100, 32)
+            dataSourceCombo.preferredSize = Dimension(120, 32)
 
             add(refreshButton)
             add(Box.createHorizontalStrut(15))
-            add(playoffButton)
+            add(JLabel("数据源:").apply { font = font.deriveFont(Font.PLAIN, 11f) })
+            add(dataSourceCombo)
         }
 
         // 右侧状态标签
@@ -89,8 +90,21 @@ class StandingsPanel(
         toolBar.add(buttonPanel, BorderLayout.WEST)
         toolBar.add(statusPanel, BorderLayout.EAST)
 
+        // 初始化数据源选中值
+        val currentSource = DataSource.fromId(NBASettingsState.getInstance().dataSource)
+        dataSourceCombo.selectedIndex = DataSource.values().indexOf(currentSource).coerceAtLeast(0)
+
         refreshButton.addActionListener { loadStandings() }
-        playoffButton.addActionListener { onPlayoffClick?.invoke() }
+
+        // 数据源切换
+        dataSourceCombo.addActionListener {
+            val selectedIndex = dataSourceCombo.selectedIndex
+            if (selectedIndex >= 0 && selectedIndex < DataSource.values().size) {
+                val selectedSource = DataSource.values()[selectedIndex]
+                NBASettingsState.getInstance().dataSource = selectedSource.id
+                loadStandings()  // 重新加载数据
+            }
+        }
 
         // 标签页 - 东西部分开
         tabbedPane.apply {
@@ -111,21 +125,23 @@ class StandingsPanel(
     private fun loadStandings() {
         statusLabel.text = "加载中..."
         refreshButton.isEnabled = false
+        dataSourceCombo.isEnabled = false
 
         scope.launch {
-            val result = service.getStandings()
+            val (result, source) = service.getStandingsWithSource()
 
             ApplicationManager.getApplication().invokeLater {
                 refreshButton.isEnabled = true
+                dataSourceCombo.isEnabled = true
                 result.fold(
                     onSuccess = { standings ->
                         currentStandings = standings
                         updateStandingsUI(standings)
-                        statusLabel.text = "✅ 更新于 ${standings.lastUpdated}"
+                        statusLabel.text = "✅ ${source.displayName} · 更新于 ${standings.lastUpdated}"
                     },
                     onFailure = { error ->
                         showError(error.message ?: "加载失败")
-                        statusLabel.text = "❌ 加载失败"
+                        statusLabel.text = "⚠️ 排名数据不可用（海外源访问受限）"
                     }
                 )
             }
@@ -401,12 +417,27 @@ class StandingsPanel(
      */
     private fun showError(message: String) {
         tabbedPane.removeAll()
-        val errorLabel = JLabel("❌ $message").apply {
+
+        // 将多数据源的原始报错翻译为用户可理解的说明
+        val friendly = if (message.contains("所有数据源均失败")) {
+            "<html><div style='text-align: center; padding: 30px;'>" +
+                    "📊 暂时无法加载排名数据<br><br>" +
+                    "排名仅由海外数据源提供（ESPN / NBA.com），<br>" +
+                    "当前网络环境可能无法访问。<br>" +
+                    "中文数据源（新浪/直播吧）暂无排名接口。<br><br>" +
+                    "可点击「刷新」重试，或在设置中配置代理后切换 ESPN 源。" +
+                    "</div></html>"
+        } else {
+            "<html><div style='text-align: center; padding: 30px;'>❌ $message</div></html>"
+        }
+
+        val errorLabel = JLabel(friendly).apply {
             horizontalAlignment = SwingConstants.CENTER
             font = font.deriveFont(14f)
+            foreground = JBColor(0xCC8800, 0xFFCC33)
             border = EmptyBorder(50, 0, 0, 0)
         }
-        tabbedPane.addTab("错误", JPanel(BorderLayout()).apply { add(errorLabel, BorderLayout.CENTER) })
+        tabbedPane.addTab("提示", JPanel(BorderLayout()).apply { add(errorLabel, BorderLayout.CENTER) })
     }
 
     fun refresh() {

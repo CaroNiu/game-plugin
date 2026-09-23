@@ -2,6 +2,7 @@ package com.caro.nba
 
 import com.caro.nba.model.PlayByPlay
 import com.caro.nba.service.GameDetailService
+import com.caro.nba.service.GameRef
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.DialogWrapper
 import com.intellij.ui.JBColor
@@ -21,7 +22,8 @@ class PlayByPlayPanel(
     private val awayTeamName: String,
     private val homeTeamId: String,
     private val awayTeamId: String,
-    private val gameStatus: String = "scheduled"
+    private val gameStatus: String = "scheduled",
+    private val gameRef: GameRef? = null  // 中文源 gameId 与 ESPN 不通用时用于反查
 ) : DialogWrapper(project) {
 
     private val service = GameDetailService()
@@ -102,12 +104,18 @@ class PlayByPlayPanel(
     }
 
     private fun loadPlayByPlay() {
+        // 未开赛的比赛不会有解说流，直接显示提示不发请求
+        if (isGameScheduled) {
+            showInfo("🕐 比赛尚未开始\n\n开赛前 10 分钟左右这里会提供文字直播，\n届时点击「刷新」即可获取中文解说。")
+            return
+        }
+
         SwingUtilities.invokeLater {
             loadingLabel?.isVisible = true
         }
 
         try {
-            val result = service.getPlayByPlay(gameId, homeTeamId, awayTeamId)
+            val result = service.getPlayByPlay(gameId, homeTeamId, awayTeamId, gameRef)
             result.fold(
                 onSuccess = { pbp ->
                     SwingUtilities.invokeLater {
@@ -130,10 +138,25 @@ class PlayByPlayPanel(
 
     private fun showPlayByPlay(pbp: PlayByPlay) {
         loadingLabel?.isVisible = false
-        
+
         // 创建内容面板
         val content = JPanel()
         content.layout = BoxLayout(content, BoxLayout.Y_AXIS)
+
+        // 空数据提示：未开赛/数据源无文字直播时给出说明而不是空白
+        if (pbp.plays.isEmpty()) {
+            content.add(JLabel("<html><div style='padding: 30px; text-align: center;'>"
+                    + "该比赛暂无文字转播数据。<br>比赛临近开赛或进行中时才会有中文解说流，<br>可稍后点击刷新重试。</div></html>").apply {
+                font = font.deriveFont(13f)
+                foreground = JBColor.GRAY
+                alignmentX = Component.CENTER_ALIGNMENT
+            })
+            scrollPane?.viewport?.view = content
+            scrollPane?.isVisible = true
+            mainPanel?.revalidate()
+            mainPanel?.repaint()
+            return
+        }
 
         // 按节数分组显示
         val playsByPeriod = pbp.plays.groupBy { it.period }
@@ -226,13 +249,38 @@ class PlayByPlayPanel(
         lastUpdateLabel?.text = "最后更新: $now"
     }
 
+    /**
+     * 显示非错误的说明信息（灰色，居中）
+     */
+    private fun showInfo(message: String) {
+        loadingLabel?.isVisible = false
+        scrollPane?.isVisible = false
+
+        mainPanel?.add(JLabel("<html><div style='padding: 20px; text-align: center;'>"
+                + message.replace("\n", "<br>") + "</div></html>").apply {
+            foreground = JBColor.GRAY
+            font = font.deriveFont(14f)
+            horizontalAlignment = SwingConstants.CENTER
+        }, BorderLayout.CENTER)
+        mainPanel?.revalidate()
+        mainPanel?.repaint()
+    }
+
     private fun showError(message: String) {
         loadingLabel?.isVisible = false
         scrollPane?.isVisible = false
-        
-        mainPanel?.add(JLabel("❌ $message").apply {
-            foreground = JBColor.RED
-            font = font.deriveFont(16f)
+
+        // 将底层报错翻译为用户可理解的提示
+        val friendly = when {
+            message.contains("所有数据源均失败") ->
+                "暂时无法获取文字转播。<br>比赛进行中时点击「刷新」重试，<br>中文解说流通常在开赛前 10 分钟左右开放。"
+            message.contains("没有建立") || message.contains("无文字直播") ->
+                "该比赛暂未开放文字直播间。<br>临近开赛或进行中时点击「刷新」重试。"
+            else -> message
+        }
+        mainPanel?.add(JLabel("<html><div style='padding: 20px; text-align: center;'>ℹ️ $friendly</div></html>").apply {
+            foreground = JBColor(0xCC8800, 0xFFCC33)  // 橙色提示而非红色错误
+            font = font.deriveFont(14f)
             horizontalAlignment = SwingConstants.CENTER
         }, BorderLayout.CENTER)
         mainPanel?.revalidate()
