@@ -1,0 +1,25 @@
+build.gradle.kts
+  d022ad590b190cbc 11,38,53-57
+src/main/resources/META-INF/plugin.xml
+  d022ad590b190cbc 44-55
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.2.8",
+  "base_commit_sha": "2175819ff23708fd0b4aed02b22c9da92297454b",
+  "prompts": {
+    "d022ad590b190cbc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "019347b6-b13b-4320-883b-9599e9c09b5b",
+        "model": "doubao-seed-2-1-turbo-260628"
+      },
+      "human_author": "JMS\\caro.niu",
+      "messages": [],
+      "total_additions": 223,
+      "total_deletions": 205,
+      "accepted_lines": 202,
+      "overriden_lines": 2
+    }
+  }
+}
